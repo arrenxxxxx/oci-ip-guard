@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+**/data/
+*.db
+*.db-*
+*.pem
+*.key
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Pairing files contain the shared report secret.
+**/monitor-pairing*.json
+**/network-audit.json

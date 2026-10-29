@@ -1,0 +1,28 @@
+groups:
+  - name: oci-ip-guard
+    rules:
+      - alert: OciGuardControllerDown
+        expr: up{job="oci-ip-guard"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'OCI IP Guard controller unavailable'}
+      - alert: OciGuardLocalProbeOffline
+        expr: oci_guard_monitor_online == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'Local probe heartbeat expired; switching inhibited'}
+      - alert: OciGuardUnsafeProbe
+        expr: oci_guard_source_mapping_verified == 0 or oci_guard_internet_up == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Source-IP mapping or default-egress controls failed'}
+      - alert: OciGuardNotificationFailure
+        expr: oci_guard_notification_retry_attempts > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Notification delivery is retrying'}
+      - alert: OciGuardDnsError
+        expr: oci_guard_dns_read_ok == 0 or oci_guard_pending_dns_write == 1
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: 'DNS read failed or write requires reconciliation'}

@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OCI IP Guard",
+    "subtitle": "One host. Regional signals. Guarded DNS failover.",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1280,
+      480
+    ]
+  },
+  "components": [
+    {
+      "id": "targets",
+      "type": "external",
+      "label": "Regional targets",
+      "sublabel": "Beijing \u00b7 Hangzhou \u00b7 Shenzhen",
+      "pos": [
+        40,
+        80
+      ],
+      "size": [
+        240,
+        76
+      ]
+    },
+    {
+      "id": "probe",
+      "type": "backend",
+      "label": "Source-bound probes",
+      "sublabel": "One local IP per public entry",
+      "pos": [
+        360,
+        80
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "decision",
+      "type": "security",
+      "label": "Failover decision",
+      "sublabel": "Ratios \u00b7 streaks \u00b7 cooldown",
+      "pos": [
+        670,
+        80
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "dns",
+      "type": "cloud",
+      "label": "Cloudflare DNS",
+      "sublabel": "A record \u00b7 write + read-back",
+      "pos": [
+        1000,
+        80
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "State \u00b7 events \u00b7 notification queue",
+      "pos": [
+        360,
+        300
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "metrics",
+      "type": "backend",
+      "label": "Prometheus / Grafana",
+      "sublabel": "Optional existing monitoring",
+      "pos": [
+        670,
+        300
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "notify",
+      "type": "external",
+      "label": "Feishu + Telegram",
+      "sublabel": "Fault \u00b7 recovery \u00b7 switch",
+      "pos": [
+        1000,
+        300
+      ],
+      "size": [
+        230,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "OCI HOST \u00b7 ONE DOCKER SERVICE + OPTIONAL MONITORING",
+      "wraps": [
+        "probe",
+        "decision",
+        "state",
+        "metrics"
+      ],
+      "pad": 30
+    }
+  ],
+  "connections": [
+    {
+      "id": "tcp",
+      "from": "probe",
+      "to": "targets",
+      "label": "TCP / 60s",
+      "variant": "emphasis"
+    },
+    {
+      "id": "samples",
+      "from": "probe",
+      "to": "decision",
+      "label": "results",
+      "variant": "emphasis"
+    },
+    {
+      "id": "switch",
+      "from": "decision",
+      "to": "dns",
+      "label": "live mode only",
+      "variant": "emphasis"
+    },
+    {
+      "id": "persist",
+      "from": "probe",
+      "to": "state",
+      "label": "persist",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        475,
+        225
+      ]
+    },
+    {
+      "id": "scrape",
+      "from": "metrics",
+      "to": "decision",
+      "label": "scrape /metrics",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "variant": "dashed",
+      "labelAt": [
+        785,
+        225
+      ]
+    },
+    {
+      "id": "alerts",
+      "from": "decision",
+      "to": "notify",
+      "label": "events",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          950,
+          118
+        ],
+        [
+          950,
+          230
+        ],
+        [
+          1115,
+          230
+        ]
+      ],
+      "labelAt": [
+        1040,
+        215
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Observe",
+      "items": [
+        "Bind private source IPs; verify public mappings.",
+        "Default targets share one cloud provider."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Decide",
+      "items": [
+        "3 failed rounds + healthy backup.",
+        "15-minute cooldown; no automatic failback."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Protect",
+      "items": [
+        "Dry Run by default.",
+        "Unknown, stale or all-bad signals block writes."
+      ]
+    }
+  ]
+}

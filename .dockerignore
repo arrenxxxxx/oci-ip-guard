@@ -1,0 +1,4 @@
+**
+!guard
+!guard/*.py
+!Dockerfile

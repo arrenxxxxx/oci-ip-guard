@@ -1,0 +1,95 @@
+name: publish-images
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. v0.1.0'
+        required: true
+        type: string
+      registry:
+        description: 'Image registry'
+        required: true
+        default: ghcr
+        type: choice
+        options: [ghcr, dockerhub]
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.ref }}-${{ inputs.registry || 'ghcr' }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    # Explicit repository opt-in: adding this workflow alone never publishes.
+    if: vars.ENABLE_IMAGE_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -q
+      - name: Validate release and image name
+        id: image
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+          REGISTRY: ${{ inputs.registry || 'ghcr' }}
+          REPOSITORY: ${{ github.repository }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          ROLE: controller
+        run: |
+          python - <<'PYCODE'
+          import os, re
+          version = os.environ['VERSION']
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?', version), 'Use a semver tag such as v0.1.0'
+          repository = os.environ['REPOSITORY'].lower()
+          role = os.environ['ROLE']
+          if os.environ['REGISTRY'] == 'dockerhub':
+              user = os.environ['DOCKERHUB_USERNAME']
+              assert re.fullmatch(r'[a-z0-9][a-z0-9_-]+', user), 'Set DOCKERHUB_USERNAME repository variable'
+              image = user + '/' + repository.split('/')[1] + '-' + role
+          else:
+              image = 'ghcr.io/' + repository + '-' + role
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('tag=' + image + ':' + version + '\n')
+          PYCODE
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: (inputs.registry || 'ghcr') == 'ghcr'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v3
+        if: inputs.registry == 'dockerhub'
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          target: controller
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ inputs.version || github.ref_name }}
+            org.opencontainers.image.licenses=MIT
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=controller
+          cache-to: type=gha,mode=max,scope=controller
+      - name: Record image digest
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          printf '%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

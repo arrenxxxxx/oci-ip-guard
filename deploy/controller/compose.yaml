@@ -1,0 +1,28 @@
+name: ip-guard-controller
+services:
+  controller:
+    build:
+      context: ../..
+      target: controller
+    image: ${IP_GUARD_IMAGE:-ip-guard-controller:local}
+    restart: unless-stopped
+    env_file: .env
+    network_mode: host
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 192m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://127.0.0.1:8765/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
