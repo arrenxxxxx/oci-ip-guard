@@ -18,7 +18,7 @@
 
 Cloudflare Token 权限为指定 Zone 的 Zone → DNS → Edit，避免全局 API Key。填写 Zone ID 后向导只读查找 Record ID；记录必须是唯一、DNS-only、内容为候选 IP 之一的 A 记录。若未填写 Token，只能使用 DNS 解析进行 Dry Run。Token 的 DNS Edit 权限最终仍需实际写操作才能验证。
 
-飞书 Hook、签名 Secret、Telegram Token/Chat ID 均输入到向导或私有 `.env`，不要提交 Git。若 Telegram 由现有 Grafana 联系点转发，配置好对应告警规则后设置 `TELEGRAM_VIA_GRAFANA=true`，该标志本身不会创建联系点。
+通知按需配置，可使用 Telegram、飞书 Webhook 或同时启用；两者均跳过时仍会在本地记录事件。飞书 Hook、签名 Secret、Telegram Token/Chat ID 均输入到向导或私有 `.env`，不要提交 Git。若 Telegram 由现有 Grafana 联系点转发，配置好对应告警规则后设置 `TELEGRAM_VIA_GRAFANA=true`，该标志本身不会创建联系点。
 
 ## 3. 手动 Compose 安装
 

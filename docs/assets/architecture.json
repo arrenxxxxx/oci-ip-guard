@@ -3,224 +3,212 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "OCI IP Guard",
-    "subtitle": "One host. Regional signals. Guarded DNS failover.",
+    "subtitle": "巡检 → 本地记录 → 故障告警 → DNS 切换",
     "animation": "none",
     "quality_profile": "showcase",
     "viewBox": [
       1280,
-      480
+      520
     ]
   },
   "components": [
     {
-      "id": "targets",
-      "type": "external",
-      "label": "Regional targets",
-      "sublabel": "Beijing \u00b7 Hangzhou \u00b7 Shenzhen",
-      "pos": [
-        40,
-        80
-      ],
-      "size": [
-        240,
-        76
-      ]
-    },
-    {
       "id": "probe",
       "type": "backend",
-      "label": "Source-bound probes",
-      "sublabel": "One local IP per public entry",
+      "label": "01  定时巡检",
+      "sublabel": "绑定各入口源 IP · 多地区 TCP",
       "pos": [
-        360,
-        80
+        40,
+        100
       ],
       "size": [
         230,
-        76
+        80
       ]
     },
     {
-      "id": "decision",
-      "type": "security",
-      "label": "Failover decision",
-      "sublabel": "Ratios \u00b7 streaks \u00b7 cooldown",
+      "id": "state",
+      "type": "database",
+      "label": "02  本地记录",
+      "sublabel": "SQLite · 状态 / 延迟 / 事件",
       "pos": [
-        670,
-        80
+        360,
+        100
       ],
       "size": [
         230,
-        76
+        80
+      ]
+    },
+    {
+      "id": "alarm",
+      "type": "backend",
+      "label": "03  故障告警",
+      "sublabel": "连续失败判定 · 通知入队",
+      "pos": [
+        680,
+        100
+      ],
+      "size": [
+        230,
+        80
+      ]
+    },
+    {
+      "id": "switch",
+      "type": "security",
+      "label": "04  DNS 切换",
+      "sublabel": "健康备用 · 冷却 · Dry Run",
+      "pos": [
+        1000,
+        100
+      ],
+      "size": [
+        230,
+        80
+      ]
+    },
+    {
+      "id": "metrics",
+      "type": "external",
+      "label": "监控看板（可选）",
+      "sublabel": "Prometheus 采集 → Grafana 展示",
+      "pos": [
+        360,
+        340
+      ],
+      "size": [
+        230,
+        80
+      ]
+    },
+    {
+      "id": "notify",
+      "type": "external",
+      "label": "通知渠道（可选）",
+      "sublabel": "Telegram / 飞书 Webhook",
+      "pos": [
+        680,
+        340
+      ],
+      "size": [
+        230,
+        80
       ]
     },
     {
       "id": "dns",
       "type": "cloud",
       "label": "Cloudflare DNS",
-      "sublabel": "A record \u00b7 write + read-back",
+      "sublabel": "修改 A 记录 · 读回确认",
       "pos": [
         1000,
+        340
+      ],
+      "size": [
+        230,
         80
-      ],
-      "size": [
-        230,
-        76
-      ]
-    },
-    {
-      "id": "state",
-      "type": "database",
-      "label": "SQLite",
-      "sublabel": "State \u00b7 events \u00b7 notification queue",
-      "pos": [
-        360,
-        300
-      ],
-      "size": [
-        230,
-        76
-      ]
-    },
-    {
-      "id": "metrics",
-      "type": "backend",
-      "label": "Prometheus / Grafana",
-      "sublabel": "Optional existing monitoring",
-      "pos": [
-        670,
-        300
-      ],
-      "size": [
-        230,
-        76
-      ]
-    },
-    {
-      "id": "notify",
-      "type": "external",
-      "label": "Feishu + Telegram",
-      "sublabel": "Fault \u00b7 recovery \u00b7 switch",
-      "pos": [
-        1000,
-        300
-      ],
-      "size": [
-        230,
-        76
       ]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "OCI HOST \u00b7 ONE DOCKER SERVICE + OPTIONAL MONITORING",
+      "label": "OCI 主机 · 一个容器即可独立运行",
       "wraps": [
         "probe",
-        "decision",
         "state",
-        "metrics"
+        "alarm",
+        "switch"
       ],
-      "pad": 30
+      "pad": 24
     }
   ],
   "connections": [
     {
-      "id": "tcp",
-      "from": "probe",
-      "to": "targets",
-      "label": "TCP / 60s",
-      "variant": "emphasis"
-    },
-    {
-      "id": "samples",
-      "from": "probe",
-      "to": "decision",
-      "label": "results",
-      "variant": "emphasis"
-    },
-    {
-      "id": "switch",
-      "from": "decision",
-      "to": "dns",
-      "label": "live mode only",
-      "variant": "emphasis"
-    },
-    {
-      "id": "persist",
+      "id": "results",
       "from": "probe",
       "to": "state",
-      "label": "persist",
+      "label": "检测结果",
+      "variant": "emphasis"
+    },
+    {
+      "id": "failure",
+      "from": "state",
+      "to": "alarm",
+      "label": "故障事件",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decision",
+      "from": "alarm",
+      "to": "switch",
+      "label": "满足切换条件",
+      "variant": "emphasis"
+    },
+    {
+      "id": "metrics",
+      "from": "metrics",
+      "to": "state",
+      "label": "采集 /metrics",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        475,
+        260
+      ],
+      "variant": "dashed"
+    },
+    {
+      "id": "notification",
+      "from": "alarm",
+      "to": "notify",
+      "label": "异步发送 / 重试",
       "fromSide": "bottom",
       "toSide": "top",
       "labelAt": [
-        475,
-        225
-      ]
-    },
-    {
-      "id": "scrape",
-      "from": "metrics",
-      "to": "decision",
-      "label": "scrape /metrics",
-      "fromSide": "top",
-      "toSide": "bottom",
-      "variant": "dashed",
-      "labelAt": [
-        785,
-        225
-      ]
-    },
-    {
-      "id": "alerts",
-      "from": "decision",
-      "to": "notify",
-      "label": "events",
-      "fromSide": "right",
-      "toSide": "top",
-      "via": [
-        [
-          950,
-          118
-        ],
-        [
-          950,
-          230
-        ],
-        [
-          1115,
-          230
-        ]
+        795,
+        260
       ],
+      "variant": "dashed"
+    },
+    {
+      "id": "patch",
+      "from": "switch",
+      "to": "dns",
+      "label": "启用后执行",
+      "fromSide": "bottom",
+      "toSide": "top",
       "labelAt": [
-        1040,
-        215
-      ]
+        1115,
+        260
+      ],
+      "variant": "emphasis"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Observe",
+      "title": "独立运行",
       "items": [
-        "Bind private source IPs; verify public mappings.",
-        "Default targets share one cloud provider."
+        "状态和事件保存在本地，可通过命令查看。",
+        "不要求安装 Prometheus 或 Grafana。"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Decide",
+      "title": "按需通知",
       "items": [
-        "3 failed rounds + healthy backup.",
-        "15-minute cooldown; no automatic failback."
+        "配置 Telegram 或飞书 Webhook，可同时启用。",
+        "通知异步发送，不阻塞 DNS 切换。"
       ]
     },
     {
       "dot": "amber",
-      "title": "Protect",
+      "title": "谨慎切换",
       "items": [
-        "Dry Run by default.",
-        "Unknown, stale or all-bad signals block writes."
+        "默认 Dry Run，只生成切换建议。",
+        "健康备用、连续判定和冷却条件必须满足。"
       ]
     }
   ]

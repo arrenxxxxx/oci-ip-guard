@@ -4,7 +4,7 @@
 
 **一个 Docker 服务，守住你的多 IP 入口。**
 
-多地区探测 · Cloudflare DNS 故障切换 · 飞书 / Telegram · Prometheus / Grafana
+多地区巡检 · 本地记录 · 故障告警 · DNS 自动切换
 
 [![Tests](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/test.yml/badge.svg)](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/test.yml)
 [![Images](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/publish.yml/badge.svg)](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/publish.yml)
@@ -18,16 +18,20 @@
 
 在 OCI 主机上，分别绑定每个公网入口对应的本机私网地址，探测国内多个地区的 TCP 连通性。当当前入口持续异常、备用入口稳定健康时，自动更新 Cloudflare 的 DNS-only A 记录。
 
-**只部署在 OCI 上。** 无需额外 NAS 或远端探针；默认 Dry Run，先观察、再启用切换。
+**一个容器即可独立运行。** 巡检结果与事件保存在本地；通知和监控看板按需接入。默认 Dry Run，先观察、再启用切换。
 
 ![OCI IP Guard architecture](docs/assets/architecture.svg)
 
-## 为什么用它
+## 如何工作
 
-- **少部署** — 一个容器，交互式安装，复用已有 Prometheus / Grafana。
-- **稳切换** — 区域比例、连续判定、15 分钟冷却；默认不自动切回。
-- **可追溯** — SQLite 持久化状态与事件，双渠道通知独立重试。
-- **有保护** — 网络对照失败、映射未知、数据过期或全部入口异常时只告警。
+1. **巡检** — 每分钟检测各入口 IP 到多个地区的连通性。
+2. **记录** — 状态、延迟和故障事件保存在本地 SQLite，通过命令即可查看。
+3. **告警** — 连续失败触发告警；按需配置 Telegram、飞书 Webhook，或同时启用。
+4. **切换** — 确认备用入口健康、冷却结束后更新 Cloudflare DNS；默认不自动切回。
+
+通知异步发送并独立重试，不要求通知送达后才能切换。网络对照失败、映射未知、数据过期或全部入口异常时，只记录和告警。
+
+**监控看板是可选项。** 不安装 Prometheus / Grafana 也能完成巡检、记录、告警和切换；需要图表时，再让 Prometheus 采集指标并导入 Grafana 看板。
 
 ## 快速开始
 
@@ -39,13 +43,20 @@ cd oci-ip-guard
 ./ip-guard setup
 ```
 
-向导填写域名、候选 IP、对应私网 IP 和通知凭据。Cloudflare Token 仅需指定 Zone 的 **DNS Edit** 权限；密钥隐藏输入，保存到权限 `0600` 的私有 `.env`。
+向导填写域名、候选 IP 和对应私网 IP；Telegram / 飞书通知可选填。Cloudflare Token 仅需指定 Zone 的 **DNS Edit** 权限；密钥隐藏输入，保存到权限 `0600` 的私有 `.env`。
 
-镜像支持 **amd64 / arm64**，固定版本及拉取方式见[镜像发布文档](docs/publishing.md)。向导中镜像留空会从源码构建。
+镜像已发布到 GHCR，支持 **amd64 / arm64**。向导中填写以下镜像名称即可使用；留空会从源码构建：
+
+```text
+ghcr.io/arrenxxxxx/oci-ip-guard-controller:v0.1.0
+```
+
+更多发布方式见[镜像文档](docs/publishing.md)。
 
 ```sh
 ./ip-guard status              # 运行状态
 ./ip-guard check               # 实测各 IP 的区域连通性
+./ip-guard events              # 查看本地事件记录
 ./ip-guard test-notification   # 验证通知
 ```
 
@@ -60,7 +71,7 @@ cd oci-ip-guard
 | 可用备用入口 | 成功比例 ≥ 80%，连续 3 轮 |
 | 中间状态 | 50% ≤ 成功比例 < 80%，重置连续次数 |
 | 切换 | 15 分钟冷却；不自动切回；写入后读回核验 |
-| 监控 | 区域成功率、延迟、当前 IP、故障、切换与本地探测心跳 |
+| 可选看板 | 区域成功率、延迟、当前 IP、故障、切换与本地探测心跳 |
 
 ## 适用范围
 

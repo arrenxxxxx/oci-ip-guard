@@ -1,5 +1,15 @@
 # 运维与监控
 
+## 本地查看
+
+无需监控平台，直接运行：
+
+```sh
+./ip-guard status  # 当前状态
+./ip-guard events  # 本地事件
+./ip-guard logs    # 运行日志
+```
+
 ## 接口和状态
 
 - `/healthz`：决策/通知工作线程与本地探测心跳。探测断网结果仍是有效的“完成一次检测”，具体故障查看指标。
@@ -11,7 +21,9 @@ SQLite 数据在 `deploy/controller/data/guard.db`，保存事件、通知重试
 
 单次目标失败保留在成功比例分母中；本地地址不存在、DNS 解析异常属于系统异常，整轮不参与决策。探测长时间未完成会触发本地心跳过期告警并禁止切换。默认两个海外 TCP 对照点是 1.1.1.1:443 和 8.8.8.8:443，使用默认出口。
 
-## Prometheus / Grafana
+## Prometheus / Grafana（可选）
+
+本节可跳过。巡检、记录、通知与自动切换均不依赖这些服务；需要图表时再接入。服务提供 `/metrics` 供 Prometheus 主动采集，Grafana 读取 Prometheus 展示数据。
 
 将 `monitoring/prometheus-job.yaml` 的 scrape job 合入已有 Prometheus，把目标替换为服务器私网 IP:8765。若主机防火墙拒绝 Docker 到宿主机访问，应仅放行监控网桥到所选私网监听地址的 TCP 8765，并按现有防火墙管理方式持久化；不要对公网放行。Docker host 模式不会提供 `controller` 或 `oci-ip-guard` 容器 DNS 别名。导入 `monitoring/dashboard.json`，其数据源 UID 默认为 `prometheus`，按已有环境调整。可选规则在 `monitoring/alerts.yaml`；已有 Grafana Telegram 联系点需要配置相应告警规则和路由。
 
