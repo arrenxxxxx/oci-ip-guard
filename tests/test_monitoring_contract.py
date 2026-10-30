@@ -39,7 +39,7 @@ class MonitoringContractTest(unittest.TestCase):
         self.assertIn('无当前数据', first['fieldConfig']['defaults']['noValue'])
         expressions = ' '.join(t['expr'] for p in panels for t in p['targets'])
         for metric in ('oci_guard_worker_healthy', 'oci_guard_sample_valid',
-                       'oci_guard_dns_write_capable', 'oci_guard_auto_switch_blocked'):
+                       'oci_guard_dns_record_ready', 'oci_guard_auto_switch_blocked'):
             self.assertIn(metric, expressions)
         self.assertEqual(len({p['id'] for p in panels}), len(panels))
 

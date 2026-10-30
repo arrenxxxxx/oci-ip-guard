@@ -1,4 +1,4 @@
-"""Mode/permission integration contracts; every Cloudflare request is mocked."""
+"""Mode/DNS record integration contracts; every Cloudflare request is mocked."""
 import io
 import json
 import os
@@ -53,113 +53,92 @@ class CloudflarePreflightTest(unittest.TestCase):
         self.addCleanup(self.env.stop)
         self.cf = Cloudflare(False)
         self.record = dict(id='b'*32, name=DOMAIN, type='A', proxied=False, content=IPS[0])
-        self.details = dict(id='c'*32, status='active', policies=[dict(effect='allow',
-            permission_groups=[{'id':'test-dns-write-group','name':'DNS Write'}],
-            resources={'com.cloudflare.api.account.zone.'+'a'*32:'*'})])
-        self.calls=[]
-        self.fail_patch=False
-        self.readback_wrong=False
-        self.account_token=False
-        self.no_policy=False
-        self.zone=dict(id='a'*32,status='active',account={'id':'d'*32})
+        self.calls = []
+        self.patch_error = None
+        self.readback_wrong = False
+        self.read_error = None
 
     def api(self, path, payload=None, method=None):
-        self.calls.append((path,payload,method))
+        self.calls.append((path, payload, method))
         if method == 'PATCH':
-            if self.fail_patch: raise TimeoutError('do not expose credentials')
-            if not self.readback_wrong: self.record['content']=payload['content']
+            if self.patch_error:
+                raise self.patch_error
+            if not self.readback_wrong:
+                self.record['content'] = payload['content']
             return self.record
-        if path == '/zones/'+'a'*32: return self.zone
-        if '/dns_records?' in path: return [self.record]
-        if self.account_token and path.startswith('/user/'): raise RuntimeError('unsupported type')
-        if path.endswith('/verify'): return {'id':'c'*32,'status':'active'}
-        if path.endswith('/'+'c'*32):
-            if self.no_policy: raise RuntimeError('denied')
-            return self.details
-        raise AssertionError(path)
+        if '/dns_records?' in path:
+            if self.read_error:
+                raise self.read_error
+            return [self.record]
+        raise AssertionError('Only DNS record requests are allowed: ' + path)
 
-    def test_readonly_success_and_no_patch(self):
-        with patch.object(self.cf,'api',side_effect=self.api):
+    def test_preflight_only_reads_dns_record_without_token_or_zone_queries(self):
+        with patch.object(self.cf, 'api', side_effect=self.api):
             self.assertEqual(self.cf.preflight(), IPS[0])
-        self.assertTrue(self.cf.write_capable)
-        self.assertTrue(all(payload is None and method is None for _,payload,method in self.calls))
-
-    def test_account_owned_token_supported(self):
-        self.account_token=True
-        with patch.object(self.cf,'api',side_effect=self.api): self.cf.preflight()
-        self.assertTrue(any(p.startswith('/accounts/'+'d'*32+'/tokens/') for p,_,_ in self.calls))
-
-    def test_policy_unreadable_is_unknown_not_enabled(self):
-        self.no_policy=True
-        with patch.object(self.cf,'api',side_effect=self.api):
-            with self.assertRaisesRegex(ValueError,'未知'): self.cf.preflight()
-        self.assertFalse(self.cf.write_capable)
-
-    def test_readonly_scope_wrong_zone_deny_and_unknown_do_not_pass(self):
-        variants=[
-            dict(effect='allow', permission_groups=[{'name':'DNS Read'}], resources={'com.cloudflare.api.account.zone.'+'a'*32:'*'}),
-            dict(effect='allow', permission_groups=[{'name':'DNS Write'}], resources={'com.cloudflare.api.account.zone.'+'e'*32:'*'}),
-            dict(effect='deny', permission_groups=[{'name':'DNS Write'}], resources={'com.cloudflare.api.account.zone.*':'*'}),
-            dict(effect='allow', permission_groups=[{'id':'unknown'}], resources={'com.cloudflare.api.account.zone.*':'*'}),
-        ]
-        for policy in variants:
-            with self.subTest(policy=policy):
-                self.details['policies']=[policy]
-                with patch.object(self.cf,'api',side_effect=self.api):
-                    with self.assertRaises(ValueError): self.cf.preflight()
-                self.assertFalse(self.cf.write_capable)
+        self.assertTrue(self.cf.record_ready)
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn('/dns_records?', self.calls[0][0])
+        self.assertEqual(self.calls[0][1:], (None, None))
 
     def test_missing_credentials_and_malformed_ids(self):
-        for env in ({}, dict(LIVE,CF_ZONE_ID='wrong'),dict(LIVE,CF_RECORD_ID='')):
-            with patch.dict(os.environ,env,clear=True): cf=Cloudflare(False)
-            with patch.object(cf,'api') as api:
-                with self.assertRaises(ValueError): cf.preflight()
+        for env in ({}, dict(LIVE, CF_ZONE_ID='wrong'), dict(LIVE, CF_RECORD_ID='')):
+            with patch.dict(os.environ, env, clear=True):
+                cf = Cloudflare(False)
+            with patch.object(cf, 'api') as api:
+                with self.assertRaises(ValueError):
+                    cf.preflight()
                 api.assert_not_called()
 
-    def test_invalid_record_and_inactive_zone(self):
-        for update in ({'proxied':True},{'type':'AAAA'},{'content':'8.8.8.8'},{'id':'e'*32}):
+    def test_invalid_record_still_blocks_switching(self):
+        for update in ({'proxied': True}, {'type': 'AAAA'}, {'content': '8.8.8.8'},
+                       {'id': 'e'*32}, {'name': 'different.example.org'}):
             with self.subTest(update=update):
-                old=dict(self.record); self.record.update(update)
-                with patch.object(self.cf,'api',side_effect=self.api):
-                    with self.assertRaises(ValueError): self.cf.preflight()
-                self.record=old
-        self.zone['status']='pending'
-        with patch.object(self.cf,'api',side_effect=self.api):
-            with self.assertRaises(ValueError): self.cf.preflight()
+                old = dict(self.record)
+                self.record.update(update)
+                with patch.object(self.cf, 'api', side_effect=self.api):
+                    with self.assertRaises(DNSWriteBlocked):
+                        self.cf.switch(IPS[0], IPS[1])
+                self.assertFalse(any(method == 'PATCH' for _, _, method in self.calls))
+                self.record = old
 
-    def test_live_switch_and_readback(self):
-        with patch.object(self.cf,'api',side_effect=self.api): self.cf.switch(IPS[0],IPS[1])
-        self.assertEqual([x[1] for x in self.calls if x[2]=='PATCH'],[{'content':IPS[1]}])
-        self.assertEqual(self.record['content'],IPS[1])
+    def test_live_switch_uses_patch_and_readback_only(self):
+        with patch.object(self.cf, 'api', side_effect=self.api):
+            self.cf.switch(IPS[0], IPS[1])
+        self.assertEqual([method for _, _, method in self.calls], [None, 'PATCH', None])
+        self.assertEqual([payload for _, payload, method in self.calls if method == 'PATCH'],
+                         [{'content': IPS[1]}])
+        self.assertEqual(self.record['content'], IPS[1])
 
     def test_last_boundary_callback_blocks_before_patch(self):
-        def expired(): raise DNSWriteBlocked('样本已过期')
-        with patch.object(self.cf,'api',side_effect=self.api):
-            with self.assertRaisesRegex(DNSWriteBlocked,'过期'):
-                self.cf.switch(IPS[0],IPS[1],before_write=expired)
-        self.assertFalse(any(method=='PATCH' for _,_,method in self.calls))
+        def expired():
+            raise DNSWriteBlocked('样本已过期')
+        with patch.object(self.cf, 'api', side_effect=self.api):
+            with self.assertRaisesRegex(DNSWriteBlocked, '过期'):
+                self.cf.switch(IPS[0], IPS[1], before_write=expired)
+        self.assertFalse(any(method == 'PATCH' for _, _, method in self.calls))
 
-    def test_account_details_fallback_when_user_verify_accepts_token(self):
-        original=self.api
-        def api(path, payload=None, method=None):
-            if path == '/user/tokens/'+'c'*32: raise RuntimeError('details only account scoped')
-            return original(path,payload,method)
-        with patch.object(self.cf,'api',side_effect=api): self.cf.preflight()
-        self.assertTrue(self.cf.write_capable)
-        self.assertTrue(any(p.startswith('/accounts/'+'d'*32+'/tokens/') for p,_,_ in self.calls))
+    def test_dns_change_between_decision_and_write_blocks_patch(self):
+        self.record['content'] = IPS[2]
+        with patch.object(self.cf, 'api', side_effect=self.api):
+            with self.assertRaises(DNSWriteBlocked):
+                self.cf.switch(IPS[0], IPS[1])
+        self.assertFalse(any(method == 'PATCH' for _, _, method in self.calls))
 
-    def test_failure_and_wrong_readback_are_not_success(self):
-        for fail,wrong in ((True,False),(False,True)):
-            with self.subTest(fail=fail,wrong=wrong):
-                self.fail_patch,self.readback_wrong=fail,wrong
-                with patch.object(self.cf,'api',side_effect=self.api):
-                    with self.assertRaises((RuntimeError,TimeoutError)): self.cf.switch(IPS[0],IPS[1])
+    def test_timeout_denied_write_and_wrong_readback_are_not_success(self):
+        for error, wrong in ((TimeoutError('write uncertain'), False),
+                             (PermissionError('403'), False), (None, True)):
+            with self.subTest(error=error, wrong=wrong):
+                self.patch_error, self.readback_wrong = error, wrong
+                with patch.object(self.cf, 'api', side_effect=self.api):
+                    with self.assertRaises((RuntimeError, TimeoutError, PermissionError)):
+                        self.cf.switch(IPS[0], IPS[1])
 
-    def test_prewrite_permission_failure_is_definitely_not_attempted(self):
-        self.no_policy=True
-        with patch.object(self.cf,'api',side_effect=self.api):
-            with self.assertRaises(DNSWriteBlocked): self.cf.switch(IPS[0],IPS[1])
-        self.assertFalse(any(method=='PATCH' for _,_,method in self.calls))
+    def test_record_read_failure_blocks_before_patch(self):
+        self.read_error = PermissionError('read denied')
+        with patch.object(self.cf, 'api', side_effect=self.api):
+            with self.assertRaises(DNSWriteBlocked):
+                self.cf.switch(IPS[0], IPS[1])
+        self.assertFalse(any(method == 'PATCH' for _, _, method in self.calls))
 
 
 class RuntimeModeTest(unittest.TestCase):
@@ -192,17 +171,17 @@ class RuntimeModeTest(unittest.TestCase):
         self.assertEqual(self.e.availability()['state'],'unavailable')
         self.assertIn('configuration',{r['code'] for r in self.e.availability()['reasons']})
 
-    def test_permissions_fail_closed_with_actionable_status(self):
-        with patch.object(self.dns,'preflight',side_effect=ValueError('权限未知：请检查 Token policy')):
+    def test_record_validation_failure_has_actionable_status(self):
+        with patch.object(self.dns,'preflight',side_effect=ValueError('DNS 记录无效：请检查记录')):
             self.assertEqual(self.three()[-1],'inhibited')
         self.assertEqual(self.dns.writes,[])
-        self.assertIn('权限未知',self.events('switch_blocked')[-1])
-        self.assertIn('oci_guard_dns_write_capable 0',self.e.metrics())
+        self.assertIn('DNS 记录无效',self.events('switch_blocked')[-1])
+        self.assertIn('oci_guard_dns_record_ready 0',self.e.metrics())
 
     def test_known_prewrite_block_clears_intent_never_claims_switch(self):
         def blocked(old,new,before_write=None):
             self.dns.ip=new  # unrelated external edit must not become our success
-            raise DNSWriteBlocked('权限检查拒绝，未发送 PATCH')
+            raise DNSWriteBlocked('记录校验拒绝，未发送 PATCH')
         with patch.object(self.dns,'switch',side_effect=blocked):
             self.assertEqual(self.three()[-1],'inhibited')
         self.assertIsNone(self.e.s['pending'])

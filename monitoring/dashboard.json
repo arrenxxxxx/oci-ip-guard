@@ -190,7 +190,8 @@
     },
     {
       "id": 19,
-      "title": "DNS 写入权限只读核验",
+      "title": "DNS 记录校验",
+      "description": "只校验目标 DNS 记录，不读取 Token 权限清单。实际写入结果以切换事件和读回为准。",
       "type": "stat",
       "gridPos": {
         "x": 16,
@@ -205,7 +206,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "oci_guard_dns_write_capable",
+          "expr": "oci_guard_dns_record_ready",
           "legendFormat": "{{instance}}",
           "instant": true
         }

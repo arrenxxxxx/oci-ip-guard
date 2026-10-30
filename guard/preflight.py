@@ -13,7 +13,7 @@ def check(dns, prober):
         raise ValueError('默认出口控制探测失败；检查现有出口网络与控制目标连通性，不要修改固定出口策略。')
     if not any(ip != current and sample['up'] for ip, sample in report['samples'].items()):
         raise ValueError('没有健康备用入口；检查备用源地址及 PROBE_TARGETS。运行时仍须累计规定的连续健康轮次。')
-    return {'ok': True, 'reasons': [], 'read_only': True, 'current_ip': current, 'dns_write_capable': True,
+    return {'ok': True, 'reasons': [], 'read_only': True, 'current_ip': current, 'dns_record_ready': True,
             'mapping_ok': True, 'internet_ok': True,
             'message': '只读预检通过；尚未启用 DNS 写入，启动后仍须满足连续探测与冷却保护。'}
 

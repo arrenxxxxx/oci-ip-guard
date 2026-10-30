@@ -17,6 +17,15 @@ IPS = [str(ipaddress.IPv4Address(ip.strip())) for ip in os.environ.get(
     'ENTRY_IPS', '192.0.2.10,198.51.100.20,203.0.113.30').split(',')]
 if len(IPS) < 2 or len(set(IPS)) != len(IPS):
     raise ValueError('ENTRY_IPS requires at least two unique IPv4 addresses')
+EGRESS_PUBLIC_IP = os.environ.get('FIXED_EGRESS_PUBLIC_IP', '').strip()
+EGRESS_PRIVATE_IP = os.environ.get('FIXED_EGRESS_PRIVATE_IP', '').strip()
+if bool(EGRESS_PUBLIC_IP) != bool(EGRESS_PRIVATE_IP):
+    raise ValueError('Configure both FIXED_EGRESS_PUBLIC_IP and FIXED_EGRESS_PRIVATE_IP')
+if EGRESS_PUBLIC_IP:
+    EGRESS_PUBLIC_IP = str(ipaddress.IPv4Address(EGRESS_PUBLIC_IP))
+    EGRESS_PRIVATE_IP = str(ipaddress.IPv4Address(EGRESS_PRIVATE_IP))
+    if EGRESS_PUBLIC_IP in IPS:
+        raise ValueError('Fixed egress public IP cannot be an entry IP')
 DOMAIN = os.environ.get('DNS_NAME', 'edge.example.com').strip().lower().rstrip('.')
 if not DOMAIN or '/' in DOMAIN or any(c.isspace() for c in DOMAIN):
     raise ValueError('Invalid DNS_NAME')

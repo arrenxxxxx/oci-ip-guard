@@ -12,7 +12,7 @@ from guard.notify import Notifier
 
 class DNS:
     configured = True
-    write_capable = True
+    record_ready = True
     def preflight(self):
         return self.current()
     def __init__(self):

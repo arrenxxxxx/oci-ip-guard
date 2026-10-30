@@ -19,11 +19,11 @@
 
 `/status` 的 `auto_switch` 提供 `available`、`state`、`message` 和 `reasons`（每项有稳定 `code` 与说明 `message`）。只看到容器 healthy、探测完成或 `dns_read_ok=1`，都不足以证明 DNS 能切换。
 
-- **DNS 自动切换已启用**：真实模式、已确认写入、只读权限证据和当前安全条件均满足。仍需当前入口达到故障阈值才执行，不会为演示而切换。
+- **DNS 自动切换已启用**：真实模式、已确认写入意图、DNS 记录校验和当前安全条件均满足。仍需当前入口达到故障阈值才执行，不会为演示而切换。
 - **模拟模式：故障时不会修改 DNS**：即使所有探测与凭据正常，也绝不会写入。
 - **自动切换不可用**：检查 `reasons`；修复凭据或权限、唯一 DNS-only A 记录及候选内容、源地址映射或探测链路，或等待新鲜连续健康样本与冷却结束。未确认写入意图必须先人工核对 DNS，再 reconcile。
 
-只读权限检查不能证明将来请求必定成功；它不会通过一次“写回原值”或临时切换测试权限。Token policy 不可读、未知权限或无法明确匹配 Zone scope 均按不可用处理。绝不根据 Token 名称或记录读取成功推断 DNS Write 权限。
+控制器不查询 Token 权限清单，也不通过“写回原值”或临时切换测试权限。故障条件满足后直接请求修改指定 DNS 记录，再读回确认。自动切换已启用表示运行模式与保护条件允许尝试切换，不表示已验证 Token 写权限；写入被拒绝、超时或读回不一致会记录失败/待确认事件。
 
 SQLite 数据在 `deploy/controller/data/guard.db`，保存事件、通知重试、当前入口和切换时间。不要在有未确认 DNS 写入时删库；先确认实际 DNS，再运行 reconcile，重新等待健康样本与冷却。飞书和 Telegram 失败独立重试，日志不打印 Token 或 Webhook。
 
@@ -35,7 +35,7 @@ SQLite 数据在 `deploy/controller/data/guard.db`，保存事件、通知重试
 
 将 `monitoring/prometheus-job.yaml` 的 scrape job 合入已有 Prometheus，把目标替换为服务器私网 IP:8765。若主机防火墙拒绝 Docker 到宿主机访问，应仅放行监控网桥到所选私网监听地址的 TCP 8765，并按现有防火墙管理方式持久化；不要对公网放行。Docker host 模式不会提供 `controller` 或 `oci-ip-guard` 容器 DNS 别名。导入 `monitoring/dashboard.json`，其数据源 UID 默认为 `prometheus`，按已有环境调整。可选规则在 `monitoring/alerts.yaml`；已有 Grafana Telegram 联系点需要配置相应告警规则和路由。
 
-看板顶部优先显示「DNS 自动切换实际状态」：绿色为已启用，橙色为模拟观察（不会修改 DNS），红色为不可用；无数据明确显示「无当前数据，不能判断」。另列控制器线程、有效探测、只读写权限证据与阻止原因，避免把存活与容灾能力混淆。每个实例保留独立标签，多个控制器不要混合解读。
+看板顶部优先显示「DNS 自动切换实际状态」：绿色为已启用，橙色为模拟观察（不会修改 DNS），红色为不可用；无数据明确显示「无当前数据，不能判断」。另列控制器线程、有效探测、DNS 记录校验与阻止原因，避免把存活与容灾能力混淆。每个实例保留独立标签，多个控制器不要混合解读。
 
 关键指标：
 
@@ -43,7 +43,7 @@ SQLite 数据在 `deploy/controller/data/guard.db`，保存事件、通知重试
 | --- | --- |
 | `oci_guard_mode_live` / `oci_guard_mode_simulate` | 配置的实际运行模式，1 为是 |
 | `oci_guard_auto_switch_available` | 当前所有自动切换前置条件已满足，1 为可用；不表示发生过切换 |
-| `oci_guard_dns_write_capable` | 只读证据确认指定 Zone 的 DNS 写入能力，非真实写入测试 |
+| `oci_guard_dns_record_ready` | 目标 DNS 记录读取与身份检查通过；不代表已验证 Token 写权限 |
 | `oci_guard_auto_switch_blocked{reason="..."}` | 当前保护原因，1 为阻止；详细修复信息见 status |
 | `oci_guard_worker_healthy` / `oci_guard_probe_worker_healthy` | 分别为控制器工作线程、探测线程心跳存活，与切换可用性分开 |
 | `oci_guard_sample_valid` | 当前探测样本有效，不能单独证明 DNS 写入可用 |

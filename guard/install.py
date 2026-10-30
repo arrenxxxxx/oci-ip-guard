@@ -188,7 +188,7 @@ def configure_controller(values):
 def preflight_live(values, image):
     """Run read-only checks in the selected image with its own configuration imports."""
     env_text(values)  # Validate before using Docker's literal, unquoted env-file format.
-    print('正在检查凭据、DNS 记录、写入权限证据、本机 IP 映射及备用探测链路；不会修改 DNS。')
+    print('正在检查凭据、DNS 记录、本机 IP 映射及备用探测链路；不会读取 Token 权限清单或修改 DNS。')
     with tempfile.TemporaryDirectory(prefix='ip-guard-preflight-') as folder:
         config = Path(folder)/'config.env'
         write_private(config, ''.join(key + '=' + value + '\n' for key, value in values.items()))

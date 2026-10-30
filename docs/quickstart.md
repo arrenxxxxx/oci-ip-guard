@@ -23,7 +23,7 @@
 
 向导生成 `deploy/controller/.env`。已有 `.env`、数据目录或同名项目时不会覆盖。启动异常可以保留配置修复后运行 `./ip-guard start`。
 
-Cloudflare Token 使用指定 Zone 的 Zone → DNS → Edit，并提供只读 Zone 和自身 Token policy 查询所需权限，避免全局 API Key。运行时只读调用 Token verify、自身 Token policy、Zone 和 DNS 记录接口，核对有效状态、DNS Write 权限及 Zone scope；无法读取自身 policy（例如缺少 API Tokens Read）时自动切换不可用。请在 Cloudflare 中人工检查并使用可验证、最小范围的 Token；不要扩大 Zone 范围来绕过校验。填写 Zone ID 后向导只读查找 Record ID；记录必须是唯一、DNS-only、内容为候选 IP 之一的 A 记录。模拟观察模式可以不填写 Token，此时仅使用 DNS 解析作为当前入口证据。真实模式不能缺少 Token、Zone ID 或 Record ID，且必须取得只读权限证据；不能取得证据时显示自动切换不可用，而不是尝试修改 DNS 来测试权限。检查包含唯一 A 记录、DNS-only、候选 IP、源地址映射、检测链路和健康备用入口。只读权限证据不保证将来的网络请求一定成功，真正切换仍会检查执行结果并读回核验。
+Cloudflare Token 使用指定 Zone 的 Zone → DNS → Edit，避免全局 API Key。运行时只读取目标 DNS 记录，不调用 Token verify、Token policy 或 Zone 详情接口，也不要求 API Tokens Read。填写 Zone ID 后向导只读查找 Record ID；记录必须是唯一、DNS-only、内容为候选 IP 之一的 A 记录。模拟模式可以不填写 Token，此时仅使用 DNS 解析作为当前入口证据。真实模式需要 Token、Zone ID 和 Record ID；启动检查 DNS 记录、源地址映射、探测链路和健康备用入口。满足故障条件后直接 PATCH 指定记录，按 API 响应和读回结果确认成功；读取成功不代表已经验证写入权限，失败或结果不确定会告警并阻止盲目重试。
 
 通知按需配置，可使用 Telegram、飞书 Webhook 或同时启用；两者均跳过时仍会在本地记录事件。飞书 Hook、签名 Secret、Telegram Token/Chat ID 均输入到向导或私有 `.env`，不要提交 Git。若 Telegram 由现有 Grafana 联系点转发，配置好对应告警规则后设置 `TELEGRAM_VIA_GRAFANA=true`，该标志本身不会创建联系点。
 
