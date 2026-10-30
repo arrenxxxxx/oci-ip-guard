@@ -9,13 +9,17 @@ from .common import secret, INTERVAL
 from .probe import Prober
 from .engine import Engine
 from .notify import Notifier
+from .mode import resolve_mode
 
 
 def handler_for(engine, report_key, admin_key, worker_health, probe_health=None):
+    def worker_alive():
+        return time.monotonic()-worker_health[0] < 90
+    def probe_alive():
+        return probe_health is None or (probe_health[0] > 0 and
+                time.monotonic()-probe_health[0] < INTERVAL*2+30)
     def healthy():
-        return (time.monotonic()-worker_health[0] < 90 and
-                (probe_health is None or (probe_health[0] > 0 and
-                 time.monotonic()-probe_health[0] < INTERVAL*2+30)))
+        return worker_alive() and probe_alive()
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
             super().setup()
@@ -38,13 +42,15 @@ def handler_for(engine, report_key, admin_key, worker_health, probe_health=None)
         def do_GET(self):
             if self.path == '/healthz':
                 ok = healthy()
-                self.respond(200 if ok else 503, {'healthy':ok,'dry_run':engine.dry_run})
+                self.respond(200 if ok else 503, {'healthy':ok, 'worker_healthy':worker_alive(), 'probe_worker_healthy':probe_alive(),
+                    'probe_valid':engine.valid(), 'dry_run':engine.dry_run,
+                    'auto_switch':engine.availability()})
             elif self.path == '/metrics':
-                ok = int(healthy())
-                self.respond(200, engine.metrics()+f'oci_guard_worker_healthy {ok}\n', 'text/plain; version=0.0.4')
+                ok = int(worker_alive())
+                self.respond(200, engine.metrics()+f'oci_guard_worker_healthy {ok}\noci_guard_probe_worker_healthy {int(probe_alive())}\n', 'text/plain; version=0.0.4')
             elif self.path in ['/status','/events'] and self.admin():
                 with engine.lock:
-                    value = engine.s if self.path == '/status' else [dict(zip(['id','ts','kind','message'], row))
+                    value = engine.status() if self.path == '/status' else [dict(zip(['id','ts','kind','message'], row))
                         for row in engine.db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 100')]
                     self.respond(200, value)
             else:
@@ -85,16 +91,15 @@ def handler_for(engine, report_key, admin_key, worker_health, probe_health=None)
 def main():
     admin_key = secret('ADMIN_TOKEN')
     prober = Prober()
-    dry_value = os.environ.get('DRY_RUN','true')
-    if dry_value not in ['true','false']:
-        raise ValueError('DRY_RUN must be true or false')
-    dry = dry_value == 'true'
-    if not dry and os.environ.get('ENABLE_DNS_WRITES') != 'I_HAVE_REVIEWED_DRY_RUN':
-        raise ValueError('Explicit live-mode activation is required')
+    mode = resolve_mode(os.environ)
+    dry = mode.dry_run
     notifier = Notifier()
-    engine = Engine(os.environ.get('STATE_DB','/data/guard.db'),Cloudflare(dry),dry,notifier.channels)
-    engine.event('startup',f'dry_run={dry}; notification_channels={list(notifier.channels)}')
+    engine = Engine(os.environ.get('STATE_DB','/data/guard.db'),Cloudflare(dry),dry,notifier.channels,mode=mode)
+    engine.event('startup',engine.availability()['message'] +
+                 ('；' + mode.error if mode.error else '') +
+                 f'; mode={mode.name}; legacy_config={mode.legacy}; notification_channels={list(notifier.channels)}')
     engine.sync_dns()
+    engine.publish_status()
     health = [time.monotonic()]
     probe_health = [0.0]
     def worker():
@@ -138,4 +143,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        detail = str(error) if isinstance(error, ValueError) else type(error).__name__
+        print(json.dumps({'event':'startup_failed','message':'自动切换不可用', 'reason':detail}, ensure_ascii=False), flush=True)
+        raise SystemExit(1)

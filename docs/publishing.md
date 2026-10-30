@@ -4,10 +4,10 @@
 
 镜像仓库：`ghcr.io/arrenxxxxx/oci-ip-guard-controller`，支持 `linux/amd64`、`linux/arm64`。
 
-在 [Actions](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/publish.yml) 确认对应版本发布成功后拉取：
+本次模式修复不会自动发布镜像。请先从当前源码构建，或在 [Actions](https://github.com/arrenxxxxx/oci-ip-guard/actions/workflows/publish.yml) 确认指定版本确实包含该修复后拉取。下面 `VERSION` 必须替换为已验证的真实版本，不要把旧版 `v0.1.0` 当作包含修复的镜像：
 
 ```sh
-docker pull ghcr.io/arrenxxxxx/oci-ip-guard-controller:v0.1.0
+docker pull ghcr.io/arrenxxxxx/oci-ip-guard-controller:VERSION
 ```
 
 安装向导询问镜像时填写上述完整名称；留空从源码构建。已有部署可设置 `deploy/controller/.env` 中的 `IP_GUARD_IMAGE`，再运行 `./ip-guard start`。生产环境建议固定版本，或使用 Actions 输出的 `@sha256:...` digest。不发布漂移的 `latest` 标签。
@@ -50,4 +50,4 @@ python3 -m unittest discover -s tests -v
 docker build --target controller -t ip-guard-controller:local .
 ```
 
-业务凭据只留在部署机器的 `.env`。Docker 构建上下文仅包含 Dockerfile 和 `guard/*.py`。构建成功不能替代真实网络、通知和 DNS 切换验收，部署仍默认 Dry Run。
+业务凭据只留在部署机器的 `.env`。Docker 构建上下文仅包含 Dockerfile 和 `guard/*.py`。构建成功不能替代真实网络、通知和 DNS 切换验收，部署必须明确选择运行模式，真实模式必须完成只读校验和确认；旧模拟配置升级后仍禁止写入。

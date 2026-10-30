@@ -321,8 +321,8 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="795" y="154" class="t-muted" font-size="9" text-anchor="middle">连续失败判定 · 通知入队</text>
         </g>
 
-        <g id="node-switch" data-node-id="switch" data-node-label="04  DNS 切换" tabindex="0" role="button" aria-label="Focus 04  DNS 切换, 健康备用 · 冷却 · Dry Run, OCI 主机 · 一个容器即可独立运行" aria-pressed="false" data-node-kind="security" data-node-sublabel="健康备用 · 冷却 · Dry Run" data-node-context="OCI 主机 · 一个容器即可独立运行">
-          <title>04  DNS 切换 · 健康备用 · 冷却 · Dry Run · OCI 主机 · 一个容器即可独立运行</title>
+        <g id="node-switch" data-node-id="switch" data-node-label="04  DNS 切换" tabindex="0" role="button" aria-label="Focus 04  DNS 切换, 健康备用 · 冷却 · 明确模式, OCI 主机 · 一个容器即可独立运行" aria-pressed="false" data-node-kind="security" data-node-sublabel="健康备用 · 冷却 · 明确模式" data-node-context="OCI 主机 · 一个容器即可独立运行">
+          <title>04  DNS 切换 · 健康备用 · 冷却 · 明确模式 · OCI 主机 · 一个容器即可独立运行</title>
           <rect x="1000" y="100" width="230" height="80" rx="6" class="c-mask"/>
           <rect x="1000" y="100" width="230" height="80" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(1006 106) scale(0.6875)">
@@ -330,7 +330,7 @@ rect.c-bg-rect { fill: var(--bg); }
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text x="1115" y="138" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">04  DNS 切换</text>
-        <text x="1115" y="154" class="t-muted" font-size="9" text-anchor="middle">健康备用 · 冷却 · Dry Run</text>
+        <text x="1115" y="154" class="t-muted" font-size="9" text-anchor="middle">健康备用 · 冷却 · 明确模式</text>
         </g>
 
         <g id="node-metrics" data-node-id="metrics" data-node-label="监控看板（可选）" tabindex="0" role="button" aria-label="Focus 监控看板（可选）, Prometheus 采集 → Grafana 展示, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Prometheus 采集 → Grafana 展示" data-node-context="Architecture component">

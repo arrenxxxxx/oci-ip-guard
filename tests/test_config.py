@@ -30,10 +30,14 @@ from guard.common import IPS,PORT,MONITOR_ID,DOMAIN
 from guard.engine import Engine
 class DNS:
     configured=True
+    write_capable=True
+    def preflight(self): return self.current()
     ip=IPS[0]
     writes=[]
     def current(self): return self.ip
-    def switch(self, old, new): self.writes.append((old,new)); self.ip=new
+    def switch(self, old, new, before_write=None):
+        if before_write: before_write()
+        self.writes.append((old,new)); self.ip=new
 dns=DNS()
 now=[2000000000.0]
 with tempfile.TemporaryDirectory() as tmp:

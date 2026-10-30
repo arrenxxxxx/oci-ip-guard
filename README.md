@@ -18,7 +18,7 @@
 
 在 OCI 主机上，分别绑定每个公网入口对应的本机私网地址，探测国内多个地区的 TCP 连通性。当当前入口持续异常、备用入口稳定健康时，自动更新 Cloudflare 的 DNS-only A 记录。
 
-**一个容器即可独立运行。** 巡检结果与事件保存在本地；通知和监控看板按需接入。默认 Dry Run，先观察、再启用切换。
+**一个容器即可独立运行。** 巡检结果与事件保存在本地；通知和监控看板按需接入。安装时必须明确选择「真实自动切换」或「模拟观察模式」，没有静默默认模式。模拟模式故障时不会修改 DNS；真实模式必须通过检查并再次确认。
 
 ![OCI IP Guard architecture](docs/assets/architecture.svg)
 
@@ -43,13 +43,9 @@ cd oci-ip-guard
 ./ip-guard setup
 ```
 
-向导填写域名、候选 IP 和对应私网 IP；Telegram / 飞书通知可选填。Cloudflare Token 仅需指定 Zone 的 **DNS Edit** 权限；密钥隐藏输入，保存到权限 `0600` 的私有 `.env`。
+向导填写域名、候选 IP 和对应私网 IP；Telegram / 飞书通知可选填。真实模式需要指定 Zone 的 **DNS Edit** Token，并通过只读权限、记录和探测检查；无法证明写权限时不会宣称自动切换可用。密钥隐藏输入，保存到权限 `0600` 的私有 `.env`。
 
-镜像已发布到 GHCR，支持 **amd64 / arm64**。向导中填写以下镜像名称即可使用；留空会从源码构建：
-
-```text
-ghcr.io/arrenxxxxx/oci-ip-guard-controller:v0.1.0
-```
+本次模式修复请先使用**当前源码构建**（镜像名称留空），或选择已明确包含本修复的版本 / digest。旧版 `v0.1.0` 不包含新的模式校验，不能仅换 `.env` 就获得新行为；本次提交不会自动发布镜像。
 
 更多发布方式见[镜像文档](docs/publishing.md)。
 
@@ -60,7 +56,7 @@ ghcr.io/arrenxxxxx/oci-ip-guard-controller:v0.1.0
 ./ip-guard test-notification   # 验证通知
 ```
 
-默认不会修改 DNS。确认稳定后，按[启用步骤](docs/quickstart.md#4-观察后再启用)开启自动切换。
+请以 `./ip-guard status` 中的实际自动切换状态为准，不能把容器健康或普通故障告警当作切换成功。手动安装与旧配置升级见[模式选择和迁移](docs/quickstart.md#4-模式选择与旧配置迁移)。升级不会把旧模拟配置自动改为真实写入。
 
 ## 默认策略
 

@@ -58,7 +58,7 @@
       "id": "switch",
       "type": "security",
       "label": "04  DNS 切换",
-      "sublabel": "健康备用 · 冷却 · Dry Run",
+      "sublabel": "健康备用 · 冷却 · 明确模式",
       "pos": [
         1000,
         100
@@ -207,7 +207,7 @@
       "dot": "amber",
       "title": "谨慎切换",
       "items": [
-        "默认 Dry Run，只生成切换建议。",
+        "明确选择真实切换或模拟观察。",
         "健康备用、连续判定和冷却条件必须满足。"
       ]
     }

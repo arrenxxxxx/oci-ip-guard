@@ -26,3 +26,48 @@ groups:
         for: 1m
         labels: {severity: critical}
         annotations: {summary: 'DNS read failed or write requires reconciliation'}
+      - alert: OciGuardSimulationMode
+        expr: oci_guard_mode_simulate == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: '模拟模式：故障时不会修改 DNS'
+          description: '该实例运行模拟观察模式。容器健康和普通故障告警不表示自动切换已启用。'
+      - alert: OciGuardAutoSwitchUnavailable
+        expr: oci_guard_mode_live == 1 and oci_guard_auto_switch_available == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: '自动切换不可用'
+          description: '真实模式当前不满足保护条件；查看 auto_switch.reasons 与 oci_guard_auto_switch_blocked，不要据容器 healthy 判断容灾可用。'
+      - alert: OciGuardSwitchProtection
+        expr: oci_guard_auto_switch_blocked == 1
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: '自动切换保护条件：{{ $labels.reason }}'
+          description: '查看该实例 status 中的原因和修复说明。保护条件不会因告警送达而解除。'
+      - alert: OciGuardSimulatedFailover
+        expr: increase(oci_guard_events_total{kind="dry_run_switch"}[5m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: '检测到切换条件，但当前为模拟模式，DNS 未修改'
+          description: '这是模拟建议，不是实际切换成功。原 IP 和建议 IP 见 events。'
+      - alert: OciGuardDnsSwitchConfirmed
+        expr: increase(oci_guard_events_total{kind="dns_switch"}[5m]) > 0
+        labels: {severity: info}
+        annotations:
+          summary: 'DNS 自动切换成功，读回已确认'
+          description: '原 IP、新 IP 和执行结果见 events 或直接 Telegram / 飞书通知。'
+      - alert: OciGuardDnsWriteFailed
+        expr: increase(oci_guard_events_total{kind="dns_write_failed"}[5m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: 'DNS 写入失败或结果不确定'
+          description: '核对实际 DNS 和 pending 状态；超时不代表服务端未执行，不要盲目重试。'
+      - alert: OciGuardFailoverBlocked
+        expr: increase(oci_guard_events_total{kind="switch_blocked"}[5m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: '故障切换受到保护条件阻止'
+          description: '本次未发起新的 DNS 写入；若有 pending，实际记录仍需核对。查看 events 中原因，普通故障告警不是切换成功通知。'

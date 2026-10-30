@@ -1,4 +1,4 @@
-"""Interactive local deployment helper. Never enables DNS writes or publishes images."""
+"""Interactive deployment helper with explicit, validated DNS-write consent."""
 import argparse
 import getpass
 import ipaddress
@@ -9,6 +9,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 from urllib.parse import quote, urlsplit
 from .common import request
 
@@ -144,7 +145,21 @@ def prepare_image(role, reference):
     return image
 
 
+def choose_mode():
+    print('请选择运行模式（必须明确选择，回车不会接受任何默认值）：')
+    print('  1. 真实自动切换：满足故障条件并通过保护检查后，修改 Cloudflare DNS。')
+    print('  2. 模拟观察模式：只探测和告警，故障时不会修改 DNS。')
+    choice = ask('输入 1 或 2')
+    if choice not in ('1', '2'):
+        raise ValueError('未明确选择运行模式；安装已停止。重新运行 setup 并选择 1 或 2。')
+    return 'live' if choice == '1' else 'simulate'
+
+
 def configure_controller(values):
+    values['RUN_MODE'] = choose_mode()
+    values['DRY_RUN'] = 'false' if values['RUN_MODE'] == 'live' else 'true'
+    # Confirmation is deliberately not granted here: preflight must pass first.
+    values['ENABLE_DNS_WRITES'] = ''
     values['ENTRY_IPS'] = ipv4_list(ask('入口 IPv4，按优先级用逗号分隔'))
     from .probe import source_map, targets_config, DEFAULT_TARGETS
     sources = ask('对应的本机私网 IPv4，顺序与入口一致（ip -4 addr 可查看）')
@@ -159,13 +174,46 @@ def configure_controller(values):
     values['PROBE_TARGETS'] = ask('探测目标 JSON（回车使用默认）',json.dumps(DEFAULT_TARGETS,separators=(',',':')))
     targets_config(values['PROBE_TARGETS'])
     values['ADMIN_TOKEN'] = secrets.token_hex(32)
-    values['CF_API_TOKEN'] = ask('Cloudflare DNS Edit Token（回车稍后配置）',hidden=True)
+    label = 'Cloudflare DNS Edit Token（真实模式必填）' if values['RUN_MODE'] == 'live' else 'Cloudflare Token（回车稍后配置）'
+    values['CF_API_TOKEN'] = ask(label,hidden=True)
+    if values['RUN_MODE'] == 'live' and not values['CF_API_TOKEN']:
+        raise ValueError('真实自动切换需要 Cloudflare Token；请配置目标 Zone 的 DNS Edit 权限后重试。')
     if values['CF_API_TOKEN']:
         values['CF_ZONE_ID'] = ask('Cloudflare Zone ID')
         values['CF_RECORD_ID'] = cloudflare_record(values)
     notifications(values, True)
-    values['DRY_RUN'], values['ENABLE_DNS_WRITES'] = 'true', ''
     return values
+
+
+def preflight_live(values, image):
+    """Run read-only checks in the selected image with its own configuration imports."""
+    env_text(values)  # Validate before using Docker's literal, unquoted env-file format.
+    print('正在检查凭据、DNS 记录、写入权限证据、本机 IP 映射及备用探测链路；不会修改 DNS。')
+    with tempfile.TemporaryDirectory(prefix='ip-guard-preflight-') as folder:
+        config = Path(folder)/'config.env'
+        write_private(config, ''.join(key + '=' + value + '\n' for key, value in values.items()))
+        result = subprocess.run(
+            ['docker', 'run', '--rm', '--network', 'host', '--read-only', '--cap-drop', 'ALL',
+             '--security-opt', 'no-new-privileges:true', '--env-file', str(config), image,
+             'python', '-m', 'guard.preflight'],
+            text=True, capture_output=True, timeout=180)
+    try:
+        report = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise RuntimeError('真实模式检查未完成。请确认镜像支持 guard.preflight，并检查 Docker 和网络；DNS 未修改。') from None
+    if (result.returncode or not isinstance(report, dict) or report.get('ok') is not True):
+        reasons = report.get('reasons', []) if isinstance(report, dict) else []
+        detail = '; '.join(x for x in reasons if isinstance(x, str))
+        raise ValueError('自动切换不可用：' + (detail or '只读启动检查失败；请运行检查并修复配置。') + ' DNS 未修改。')
+    print('只读启动检查通过；没有修改 DNS。运行时仍会持续检查保护条件。')
+
+
+def confirm_live(values):
+    print('即将启用真实自动切换：满足故障条件时，将修改 ' + values['DNS_NAME'] +
+          ' 的 Cloudflare A 记录，候选地址为 ' + values['ENTRY_IPS'] + '。')
+    if ask('二次确认：输入 ENABLE DNS WRITES 才允许继续') != 'ENABLE DNS WRITES':
+        raise ValueError('未确认 DNS 写入；安装已停止，未保存真实模式配置。')
+    values['ENABLE_DNS_WRITES'] = 'I_HAVE_REVIEWED_DRY_RUN'
 
 
 def initialize_data(role, image, folder):
@@ -193,17 +241,23 @@ def setup(role):
     image_ref(reference,role)
     configure_controller(values)
     image = prepare_image(role,reference)
+    if values['RUN_MODE'] == 'live':
+        preflight_live(values, image)
+        confirm_live(values)
     text = env_text(values)
     write_private(folder/'.env',text)
     initialize_data(role,image,folder)
     run(compose(role)+['config','--quiet'])
     run(compose(role)+['up','-d','--no-build','--pull','never','--wait','--wait-timeout','180'])
-    print('单机服务已启动，默认 Dry Run；请核对 source_mapping_verified、区域成功率及通知。')
+    if values['RUN_MODE'] == 'simulate':
+        print('单机服务已启动。模拟模式：故障时不会修改 DNS。')
+    else:
+        print('服务已启动；已确认真实模式。请查看下方状态：容器运行正常不等于 DNS 自动切换可用。')
     status(role)
 
 
 def main():
-    parser=argparse.ArgumentParser(description='OCI IP Guard 本机部署助手（默认 Dry Run，不发布镜像）')
+    parser=argparse.ArgumentParser(description='OCI IP Guard 本机部署助手（必须明确选择真实自动切换或模拟观察模式）')
     parser.add_argument('command',choices=['setup','start','status','logs','test-notification','check','events','switch','reconcile'])
     parser.add_argument('target',nargs='?',help='仅 switch 命令使用：目标公网 IP')
     args=parser.parse_args()

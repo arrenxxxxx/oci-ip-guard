@@ -8,4 +8,4 @@ if command not in ['status','events','switch','reconcile','test-notification']:
     raise SystemExit('Commands: status, events, switch IP, reconcile, test-notification')
 payload = None if command in ['status','events'] else {'ip':sys.argv[2]} if command=='switch' else {}
 print(json.dumps(request('http://127.0.0.1:8765/'+command,payload,
-                        {'Authorization':'Bearer '+secret('ADMIN_TOKEN')}),indent=2))
+                        {'Authorization':'Bearer '+secret('ADMIN_TOKEN')}),indent=2,ensure_ascii=False))

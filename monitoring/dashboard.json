@@ -2,7 +2,7 @@
   "uid": "oci-ip-guard",
   "title": "OCI IP Guard · 单机区域探测",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "timezone": "browser",
   "tags": [
@@ -14,12 +14,297 @@
   },
   "panels": [
     {
-      "id": 1,
-      "title": "Dry Run（1=禁止修改 DNS）",
+      "id": 16,
+      "title": "DNS 自动切换实际状态（以此为准）",
       "type": "stat",
       "gridPos": {
         "x": 0,
         "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "2 * oci_guard_auto_switch_available + oci_guard_mode_simulate",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无当前数据，不能判断",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "自动切换不可用",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "模拟模式：故障时不会修改 DNS",
+                  "color": "orange"
+                },
+                "2": {
+                  "text": "DNS 自动切换已启用",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "容器工作线程 / 心跳",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_worker_healthy",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无当前数据，不能判断",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "未就绪",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "通过（不是切换成功）",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 18,
+      "title": "探测样本有效",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_sample_valid",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无当前数据，不能判断",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "未就绪",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "通过（不是切换成功）",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "DNS 写入权限只读核验",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_dns_write_capable",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无当前数据，不能判断",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "未就绪",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "通过（不是切换成功）",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "自动切换保护原因（详细解释见 status）",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_auto_switch_blocked == 1",
+          "legendFormat": "{{instance}} · {{reason}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无阻止原因或无数据，请同时核对上方状态",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "阻止切换",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 1,
+      "title": "模拟观察标志（1=不会修改 DNS）",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -53,7 +338,7 @@
       "type": "stat",
       "gridPos": {
         "x": 12,
-        "y": 0,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -87,7 +372,7 @@
       "type": "state-timeline",
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -121,7 +406,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -155,7 +440,7 @@
       "type": "state-timeline",
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -189,7 +474,7 @@
       "type": "stat",
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -223,7 +508,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -257,7 +542,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -291,7 +576,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -325,7 +610,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 32,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -359,7 +644,7 @@
       "type": "stat",
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 56,
         "w": 12,
         "h": 8
       },
@@ -393,7 +678,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 56,
         "w": 12,
         "h": 8
       },
@@ -427,7 +712,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 64,
         "w": 12,
         "h": 8
       },
@@ -461,7 +746,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 12,
-        "y": 48,
+        "y": 64,
         "w": 12,
         "h": 8
       },
@@ -495,7 +780,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 72,
         "w": 12,
         "h": 8
       },
@@ -551,5 +836,5 @@
   "templating": {
     "list": []
   },
-  "description": "单机绑定私网源 IP 的国内区域 TCP 探测。默认目标为阿里云三个区域，不代表三大运营商。迁移前历史指标来自 NAS 入站检测，请按部署时间区分。"
+  "description": "优先展示实际 DNS 自动切换可用性，区分模拟观察、保护阻止、控制器存活与探测有效。单机源地址区域 TCP 探测，不代表 VPN 入站验收。"
 }

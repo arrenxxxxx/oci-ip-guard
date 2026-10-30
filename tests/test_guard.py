@@ -12,13 +12,17 @@ from guard.notify import Notifier
 
 class DNS:
     configured = True
+    write_capable = True
+    def preflight(self):
+        return self.current()
     def __init__(self):
         self.ip, self.writes, self.fail, self.uncertain = IPS[0], [], False, False
     def current(self):
         if self.fail:
             raise OSError('network down')
         return self.ip
-    def switch(self, expected, target):
+    def switch(self, expected, target, before_write=None):
+        if before_write: before_write()
         self.writes.append((expected,target))
         if self.uncertain:
             raise TimeoutError()

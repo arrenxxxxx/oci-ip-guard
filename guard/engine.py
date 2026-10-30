@@ -4,13 +4,16 @@ import os
 import sqlite3
 import threading
 import time
+from .cloudflare import DNSWriteBlocked
 from .common import (IPS, PORT, MONITOR_ID, FRESH, MAX_SAMPLE_AGE, COOLDOWN,
                      INTERVAL, FAILURE_THRESHOLD, HEALTHY_THRESHOLD, FAILURE_RATIO, HEALTHY_RATIO)
 
 
 class Engine:
-    def __init__(self, path, dns, dry_run=True, channels=(), clock=time.time):
+    def __init__(self, path, dns, dry_run=True, channels=(), clock=time.time, mode=None):
         self.clock, self.dns, self.dry_run = clock, dns, dry_run
+        self.mode = mode
+        self.config_error = mode.error if mode else ''
         self.channels = channels
         self.lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=20)
@@ -36,6 +39,8 @@ class Engine:
         for key in ('failures','probe_total','probe_success_total'):
             for ip in IPS:
                 self.s[key].setdefault(ip,0)
+        self.s['dns_write_capable'] = False
+        self.s['preflight_error'] = ''
         self.s['dns_ok'] = False
         self.s['started'] = clock()
         self.save()
@@ -60,6 +65,14 @@ class Engine:
 
     def sync_dns(self):
         try:
+            self.s['dns_write_capable'] = False
+            self.s['preflight_error'] = ''
+            if not self.dry_run and not self.config_error:
+                try:
+                    self.dns.preflight()
+                    self.s['dns_write_capable'] = self.dns.write_capable is True
+                except Exception as error:
+                    self.s['preflight_error'] = str(error) if isinstance(error, ValueError) else '只读预检失败；检查 Cloudflare 凭据、权限和 API 连通性。'
             actual = self.dns.current()
             if actual not in IPS:
                 raise ValueError('unknown DNS target')
@@ -68,12 +81,12 @@ class Engine:
                 if actual == pending['to']:
                     self.s['switches'] += 1
                     self.s['last_switch'] = max(self.clock(), pending['ts'])
-                    self.event('dns_switch', f"{pending['from']} -> {actual}; API read-back confirmed")
+                    self.event('dns_switch', f"真实 DNS 切换成功：{pending['from']} -> {actual}；API 读回已确认。")
                     self.s['pending'] = None
                     self.s['blocked_pending'] = False
                 else:
                     self.s['blocked_pending'] = True
-                    self.alarm('uncertain_dns_write', True, 'Unconfirmed DNS write; operator reconciliation required')
+                    self.alarm('uncertain_dns_write', True, 'DNS 写入结果未确认；已禁止继续切换，请核对实际 DNS 后执行 reconcile。')
             elif self.s['current'] and actual != self.s['current']:
                 self.s['last_switch'] = self.clock()
                 self.event('external_dns_change', f"{self.s['current']} -> {actual}; cooldown started")
@@ -82,7 +95,7 @@ class Engine:
             self.alarm('dns_error', False, '')
         except Exception as error:
             self.s['dns_ok'] = False
-            self.alarm('dns_error', True, 'DNS read failed: ' + type(error).__name__)
+            self.alarm('dns_error', True, 'DNS 只读检查失败，自动切换不可用；检查凭据和记录配置：' + type(error).__name__)
         self.save()
 
     def validate(self, report):
@@ -124,8 +137,8 @@ class Engine:
                           internet_ok=report['internet_ok'], direct_ok=report['direct_ok'])
             valid = report['internet_ok'] and report['direct_ok']
             self.alarm('monitor_offline', False, '')
-            self.alarm('monitor_internet', not report['internet_ok'], 'Default-egress internet controls unavailable; switching inhibited')
-            self.alarm('unsafe_route', not report['direct_ok'], 'Source public-IP mapping not verified; switching inhibited')
+            self.alarm('monitor_internet', not report['internet_ok'], '默认出口控制探测失败，自动切换不可用；DNS 未修改，请检查出口连通性。')
+            self.alarm('unsafe_route', not report['direct_ok'], '公网/私网源地址映射未验证，自动切换不可用；DNS 未修改，请检查地址顺序和回显链路。')
             for ip, result in report['samples'].items():
                 previous = self.s['samples'].get(ip, {})
                 consecutive = valid and old_valid and INTERVAL * 0.75 <= gap <= INTERVAL * 1.5
@@ -140,12 +153,13 @@ class Engine:
                         self.s['failures'][ip] += 1
                     if result['up'] or fail >= FAILURE_THRESHOLD:
                         self.alarm('ip_' + ip, not result['up'],
-                                   ip + f' regional success ratio {result["success_ratio"]:.0%} below {FAILURE_RATIO:.0%} for {FAILURE_THRESHOLD} rounds')
+                                   ip + f' 区域成功率 {result["success_ratio"]:.0%} 连续 {FAILURE_THRESHOLD} 轮低于 {FAILURE_RATIO:.0%}；仅为故障检测，不代表 DNS 已切换。' + (' 模拟模式：故障时不会修改 DNS。' if self.dry_run else ' 请查看后续切换执行结果。'))
             self.alarm('all_down', valid and all(v['success_ratio'] < FAILURE_RATIO for v in report['samples'].values()),
-                       'All entry IPs unavailable; DNS unchanged')
+                       '全部入口不可用，没有健康备用 IP；自动切换不可用，DNS 未修改。')
             self.save()  # Persist observation/replay boundary before any external side effect.
             self.sync_dns()
             result = self.decide()
+            self.publish_status()
             self.save()
             return result
 
@@ -153,11 +167,36 @@ class Engine:
         return (set(self.s['samples']) == set(IPS) and self.s['observed'] > 0 and self.clock()-self.s['observed'] <= FRESH and
                 self.s['internet_ok'] and self.s['direct_ok'])
 
+    def blocked(self, result, target=None):
+        current = self.s['current']
+        fault = self.s['samples'].get(current, {}).get('fail', 0) >= FAILURE_THRESHOLD
+        if fault or target is not None:
+            reasons = self.availability()['reasons']
+            explanation = '; '.join(r['message'] for r in reasons)
+            if result == 'no_healthy_backup' and target is not None:
+                explanation = f'请求的备用 IP {target} 尚未达到连续健康轮次；检查该入口并等待健康阈值。'
+            explanation = explanation or result
+            key = result + ':' + explanation
+            if self.s.get('last_blocked') != key:
+                self.event('switch_blocked', '自动切换受保护条件阻止；本次未发起新的 DNS 写入（如有 pending，实际记录仍需核对）：' + explanation)
+                self.s['last_blocked'] = key
+        return result
+
+    def before_write(self, current, target):
+        pending = self.s['pending']
+        if (self.config_error or self.dry_run or not self.valid() or not self.s['dns_ok'] or
+                not self.s['dns_write_capable'] or self.clock()-self.s['last_switch'] < COOLDOWN or
+                not pending or pending['from'] != current or pending['to'] != target or
+                self.s['samples'].get(target, {}).get('good', 0) < HEALTHY_THRESHOLD):
+            raise DNSWriteBlocked('写入前样本已过期或保护条件改变；重新探测后再判断，DNS 未修改。')
+
     def decide(self, target=None):
-        if not self.valid() or not self.s['dns_ok'] or self.s['pending']:
-            return 'inhibited'
+        if self.config_error or not self.valid() or not self.s['dns_ok'] or self.s['pending']:
+            return self.blocked('inhibited', target)
+        if not self.dry_run and not self.s['dns_write_capable']:
+            return self.blocked('inhibited', target)
         if self.clock()-self.s['last_switch'] < COOLDOWN:
-            return 'cooldown'
+            return self.blocked('cooldown', target)
         current = self.s['current']
         if target is not None and target not in IPS:
             raise ValueError('Unknown target')
@@ -169,18 +208,27 @@ class Engine:
             target = next((ip for ip in IPS if ip != current and
                            self.s['samples'].get(ip, {}).get('good', 0) >= HEALTHY_THRESHOLD), None)
         if target is None or self.s['samples'].get(target, {}).get('good', 0) < HEALTHY_THRESHOLD:
-            return 'no_healthy_backup'
+            return self.blocked('no_healthy_backup', target)
         if self.dry_run:
             if self.clock()-self.s['last_plan'] >= COOLDOWN:
-                self.event('dry_run_switch', f'{current} -> {target}; DNS NOT modified')
+                self.event('dry_run_switch', f'检测到切换条件，但当前为模拟模式，DNS 未修改：{current} -> {target}（计划）。')
                 self.s['last_plan'] = self.clock()
             return 'dry_run'
+        self.s['last_blocked'] = None
         self.s['pending'] = dict(ts=self.clock(), **{'from': current, 'to': target})
         self.save()  # Crash-safe intent; never blindly repeat an uncertain PATCH.
         try:
-            self.dns.switch(current, target)
+            self.dns.switch(current, target, before_write=lambda: self.before_write(current, target))
+        except DNSWriteBlocked as error:
+            self.s['pending'] = None
+            self.s['blocked_pending'] = False
+            self.s['dns_write_capable'] = False
+            self.event('switch_blocked', '自动切换受写入前检查阻止；DNS 未修改：' + str(error))
+            self.save()
+            self.sync_dns()
+            return 'inhibited'
         except Exception as error:
-            self.event('system_error', 'DNS update uncertain: ' + type(error).__name__)
+            self.event('dns_write_failed', f'DNS 写入失败或结果不确定：{current} -> {target}；{type(error).__name__}。等待读回验证，禁止盲目重试。')
         self.sync_dns()
         return 'switch_confirmed' if self.s['pending'] is None else 'pending_reconciliation'
 
@@ -210,16 +258,71 @@ class Engine:
         with self.lock:
             baseline = self.s['observed'] or self.s['started']
             offline = self.clock()-baseline > FRESH
-            self.alarm('monitor_offline', offline, 'Local probe heartbeat/sample expired; DNS unchanged')
+            self.alarm('monitor_offline', offline, '本机探测心跳/样本已过期；自动切换不可用，DNS 未修改，请检查探测线程。')
             if offline:
                 for v in self.s['samples'].values():
                     v['good'] = v['fail'] = 0
+            self.publish_status()
             self.save()
+
+    def availability(self):
+        with self.lock:
+            return self._availability()
+
+    def _availability(self):
+        reasons = []
+        def add(code, message):
+            reasons.append({'code': code, 'message': message})
+        name = self.mode.name if self.mode else ('simulate' if self.dry_run else 'live')
+        if self.config_error:
+            add('configuration', self.config_error)
+        if not self.s['dns_ok']:
+            add('dns_read', 'DNS 记录读取/身份校验失败；检查凭据、唯一 A 记录、DNS-only 与候选 IP。')
+        if name == 'live' and not self.s['dns_write_capable']:
+            add('write_capability', self.s.get('preflight_error') or 'DNS 写权限尚未完成只读验证。')
+        if self.s['pending']:
+            add('pending_write', '存在未确认的 DNS 写入；检查事件与实际记录后执行 reconcile。')
+        if not self.valid():
+            if not self.s['observed'] or self.clock()-self.s['observed'] > FRESH:
+                add('sample_stale', '等待新鲜本机探测；检查探测线程和目标连通性。')
+            if not self.s['direct_ok']:
+                add('source_mapping', '公网/私网源地址映射未验证；检查 ENTRY_IPS、SOURCE_IPS 和回显链路。')
+            if not self.s['internet_ok']:
+                add('internet', '默认出口控制探测未通过；检查原有出口链路。')
+        if self.clock()-self.s['last_switch'] < COOLDOWN:
+            add('cooldown', '切换冷却期未结束；等待 COOLDOWN_SECONDS。')
+        current = self.s['current']
+        if not any(ip != current and self.s['samples'].get(ip, {}).get('good', 0) >= HEALTHY_THRESHOLD for ip in IPS):
+            add('healthy_backup', '没有达到连续健康轮次的备用 IP；检查备用入口并等待健康阈值。')
+        available = name == 'live' and not self.dry_run and not reasons
+        state = 'enabled' if available else 'simulate' if name == 'simulate' and not self.config_error else 'unavailable'
+        message = {'enabled':'DNS 自动切换已启用', 'simulate':'模拟模式：故障时不会修改 DNS', 'unavailable':'自动切换不可用'}[state]
+        if state == 'simulate' and reasons:
+            message += '；自动切换不可用，另有保护条件未满足（见 reasons）。'
+        return dict(available=available, state=state, message=message, reasons=reasons, mode=name,
+                    legacy_config=bool(self.mode and self.mode.legacy))
+
+    def status(self):
+        with self.lock:
+            return dict(self.s, dry_run=self.dry_run, auto_switch=self.availability(),
+                        probe_valid=self.valid())
+
+    def publish_status(self):
+        state = self.availability()
+        fingerprint = (state['state'], tuple(r['code'] for r in state['reasons']))
+        if fingerprint != getattr(self, '_published_status', None):
+            print(json.dumps(dict(event='operating_status', auto_switch=state), ensure_ascii=False), flush=True)
+            self._published_status = fingerprint
 
     def metrics(self):
         with self.lock:
             s = self.s
+            availability = self.availability()
             metrics = dict(dry_run=int(self.dry_run), sample_valid=int(self.valid()),
+                auto_switch_available=int(availability['available']),
+                mode_live=int(availability['mode'] == 'live'),
+                mode_simulate=int(availability['state'] == 'simulate'),
+                dns_write_capable=int(s['dns_write_capable']),
                 monitor_heartbeat_timestamp_seconds=s['last_report'], sample_timestamp_seconds=s['observed'],
                 monitor_online=int(s['observed'] > 0 and self.clock()-s['observed'] <= FRESH),
                 direct_route_verified=int(s['direct_ok']), internet_up=int(s['internet_ok']),
@@ -230,6 +333,9 @@ class Engine:
             metrics['nas_heartbeat_timestamp_seconds'] = metrics['monitor_heartbeat_timestamp_seconds']
             metrics['source_mapping_verified'] = metrics['direct_route_verified']
             lines = [f'oci_guard_{k} {v}' for k,v in metrics.items()]
+            blocked = {reason['code'] for reason in availability['reasons']}
+            for reason in ('configuration','dns_read','write_capability','pending_write','sample_stale','source_mapping','internet','cooldown','healthy_backup'):
+                lines.append(f'oci_guard_auto_switch_blocked{{reason="{reason}"}} {int(reason in blocked)}')
             for ip in IPS:
                 v = s['samples'].get(ip, {})
                 for name,value in [('ip_up',int(v.get('up',False))),
@@ -247,7 +353,7 @@ class Engine:
                     lines.append(f'oci_guard_region_up{{{labels}}} {int(r["up"])}')
                     latency = r['latency_ms']/1000 if r['up'] else 'NaN'
                     lines.append(f'oci_guard_region_tcp_latency_seconds{{{labels}}} {latency}')
-            for kind in ['dns_switch','dry_run_switch']:
+            for kind in ['dns_switch','dry_run_switch','dns_write_failed','switch_blocked']:
                 count = self.db.execute('SELECT COUNT(*) FROM events WHERE kind=?',(kind,)).fetchone()[0]
                 lines.append(f'oci_guard_events_total{{kind="{kind}"}} {count}')
             for channel in ['feishu','telegram']:
