@@ -2,7 +2,7 @@
   "uid": "oci-ip-guard",
   "title": "OCI · 入口与自动切换",
   "schemaVersion": 39,
-  "version": 8,
+  "version": 9,
   "refresh": "30s",
   "timezone": "browser",
   "tags": [
@@ -579,6 +579,25 @@
               {
                 "id": "decimals",
                 "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "未测得"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "未测得",
+                        "color": "#8C9BB1"
+                      }
+                    }
+                  }
+                ]
               }
             ]
           },
