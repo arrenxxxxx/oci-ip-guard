@@ -5,6 +5,16 @@ import unittest
 
 
 class ConfigTest(unittest.TestCase):
+    def test_fixed_egress_cannot_be_reused_as_entry(self):
+        for extra in [
+            {'FIXED_EGRESS_PUBLIC_IP':'192.0.2.10','FIXED_EGRESS_PRIVATE_IP':'10.0.0.70'},
+            {'FIXED_EGRESS_PUBLIC_IP':'192.0.2.90'},
+            {'FIXED_EGRESS_PUBLIC_IP':'192.0.2.90','FIXED_EGRESS_PRIVATE_IP':'10.0.0.10',
+             'SOURCE_IPS':'10.0.0.10,10.0.0.20,10.0.0.30'},
+        ]:
+            result=self.run_config(extra, 'from guard.probe import Prober; Prober()')
+            self.assertNotEqual(result.returncode,0)
+
     def run_config(self, values, code='import guard.common'):
         env = {k:v for k,v in os.environ.items() if k not in (
             'ENTRY_IPS','DNS_NAME','MONITOR_ID','PROBE_PORT','PROBE_INTERVAL_SECONDS',
@@ -30,7 +40,7 @@ from guard.common import IPS,PORT,MONITOR_ID,DOMAIN
 from guard.engine import Engine
 class DNS:
     configured=True
-    write_capable=True
+    record_ready=True
     def preflight(self): return self.current()
     ip=IPS[0]
     writes=[]

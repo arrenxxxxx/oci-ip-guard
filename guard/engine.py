@@ -39,7 +39,8 @@ class Engine:
         for key in ('failures','probe_total','probe_success_total'):
             for ip in IPS:
                 self.s[key].setdefault(ip,0)
-        self.s['dns_write_capable'] = False
+        self.s.pop('dns_write_capable', None)
+        self.s['dns_record_ready'] = False
         self.s['preflight_error'] = ''
         self.s['dns_ok'] = False
         self.s['started'] = clock()
@@ -65,12 +66,12 @@ class Engine:
 
     def sync_dns(self):
         try:
-            self.s['dns_write_capable'] = False
+            self.s['dns_record_ready'] = False
             self.s['preflight_error'] = ''
             if not self.dry_run and not self.config_error:
                 try:
                     self.dns.preflight()
-                    self.s['dns_write_capable'] = self.dns.write_capable is True
+                    self.s['dns_record_ready'] = self.dns.record_ready is True
                 except Exception as error:
                     self.s['preflight_error'] = str(error) if isinstance(error, ValueError) else '只读预检失败；检查 Cloudflare 凭据、权限和 API 连通性。'
             actual = self.dns.current()
@@ -185,7 +186,7 @@ class Engine:
     def before_write(self, current, target):
         pending = self.s['pending']
         if (self.config_error or self.dry_run or not self.valid() or not self.s['dns_ok'] or
-                not self.s['dns_write_capable'] or self.clock()-self.s['last_switch'] < COOLDOWN or
+                not self.s['dns_record_ready'] or self.clock()-self.s['last_switch'] < COOLDOWN or
                 not pending or pending['from'] != current or pending['to'] != target or
                 self.s['samples'].get(target, {}).get('good', 0) < HEALTHY_THRESHOLD):
             raise DNSWriteBlocked('写入前样本已过期或保护条件改变；重新探测后再判断，DNS 未修改。')
@@ -193,7 +194,7 @@ class Engine:
     def decide(self, target=None):
         if self.config_error or not self.valid() or not self.s['dns_ok'] or self.s['pending']:
             return self.blocked('inhibited', target)
-        if not self.dry_run and not self.s['dns_write_capable']:
+        if not self.dry_run and not self.s['dns_record_ready']:
             return self.blocked('inhibited', target)
         if self.clock()-self.s['last_switch'] < COOLDOWN:
             return self.blocked('cooldown', target)
@@ -222,7 +223,7 @@ class Engine:
         except DNSWriteBlocked as error:
             self.s['pending'] = None
             self.s['blocked_pending'] = False
-            self.s['dns_write_capable'] = False
+            self.s['dns_record_ready'] = False
             self.event('switch_blocked', '自动切换受写入前检查阻止；DNS 未修改：' + str(error))
             self.save()
             self.sync_dns()
@@ -278,8 +279,8 @@ class Engine:
             add('configuration', self.config_error)
         if not self.s['dns_ok']:
             add('dns_read', 'DNS 记录读取/身份校验失败；检查凭据、唯一 A 记录、DNS-only 与候选 IP。')
-        if name == 'live' and not self.s['dns_write_capable']:
-            add('write_capability', self.s.get('preflight_error') or 'DNS 写权限尚未完成只读验证。')
+        if name == 'live' and not self.s['dns_record_ready']:
+            add('dns_record', self.s.get('preflight_error') or 'DNS 记录尚未通过读取与身份校验。')
         if self.s['pending']:
             add('pending_write', '存在未确认的 DNS 写入；检查事件与实际记录后执行 reconcile。')
         if not self.valid():
@@ -322,7 +323,7 @@ class Engine:
                 auto_switch_available=int(availability['available']),
                 mode_live=int(availability['mode'] == 'live'),
                 mode_simulate=int(availability['state'] == 'simulate'),
-                dns_write_capable=int(s['dns_write_capable']),
+                dns_record_ready=int(s['dns_record_ready']),
                 monitor_heartbeat_timestamp_seconds=s['last_report'], sample_timestamp_seconds=s['observed'],
                 monitor_online=int(s['observed'] > 0 and self.clock()-s['observed'] <= FRESH),
                 direct_route_verified=int(s['direct_ok']), internet_up=int(s['internet_ok']),
@@ -334,7 +335,7 @@ class Engine:
             metrics['source_mapping_verified'] = metrics['direct_route_verified']
             lines = [f'oci_guard_{k} {v}' for k,v in metrics.items()]
             blocked = {reason['code'] for reason in availability['reasons']}
-            for reason in ('configuration','dns_read','write_capability','pending_write','sample_stale','source_mapping','internet','cooldown','healthy_backup'):
+            for reason in ('configuration','dns_read','dns_record','pending_write','sample_stale','source_mapping','internet','cooldown','healthy_backup'):
                 lines.append(f'oci_guard_auto_switch_blocked{{reason="{reason}"}} {int(reason in blocked)}')
             for ip in IPS:
                 v = s['samples'].get(ip, {})

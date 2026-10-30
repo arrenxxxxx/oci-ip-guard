@@ -10,7 +10,7 @@ import socket
 import ssl
 import statistics
 import time
-from .common import IPS, PORT, MONITOR_ID, PROBE_TIMEOUT, HEALTHY_RATIO, INTERVAL
+from .common import IPS, PORT, MONITOR_ID, PROBE_TIMEOUT, HEALTHY_RATIO, INTERVAL, EGRESS_PRIVATE_IP
 
 DEFAULT_TARGETS = [
     {'name':'beijing', 'host':'oss-cn-beijing.aliyuncs.com', 'port':443},
@@ -26,6 +26,8 @@ def source_map(value, ips=IPS):
         raise ValueError('SOURCE_IPS must match ENTRY_IPS one-to-one (maximum 16)')
     if any(ipaddress.ip_address(x).is_unspecified or ipaddress.ip_address(x).is_loopback for x in sources):
         raise ValueError('SOURCE_IPS must be assigned local interface addresses')
+    if EGRESS_PRIVATE_IP and EGRESS_PRIVATE_IP in sources:
+        raise ValueError('Fixed egress private IP cannot be used for entry probes')
     return dict(zip(ips,sources))
 
 
@@ -100,23 +102,38 @@ class Prober:
             raise ValueError('Too many targets for probe interval/timeout; increase interval')
         self.mapping_at = 0
         self.mapping = {}
+        self.mapping_status = {}
 
     def verify_mapping(self):
         if self.mapping and 0 <= self.clock()-self.mapping_at < 300:
             return all(self.mapping.values())
         def check(item):
             ip, source = item
-            try:
-                return ip, all(public_ip(source,endpoint) == ip for endpoint in ECHOES)
-            except Exception:
-                return ip, False
+            statuses = []
+            for endpoint in ECHOES:
+                try:
+                    statuses.append('verified' if public_ip(source,endpoint) == ip else 'mismatch')
+                except (TimeoutError, ConnectionError):
+                    statuses.append('unavailable')
+                except OSError as error:
+                    statuses.append('unavailable' if error.errno in (
+                        errno.EADDRNOTAVAIL, errno.ENETUNREACH, errno.EHOSTUNREACH,
+                        errno.ETIMEDOUT, errno.ECONNREFUSED, errno.ECONNRESET) else 'unknown')
+                except Exception:
+                    statuses.append('unknown')
+            status = ('mismatch' if 'mismatch' in statuses else
+                      'unknown' if 'unknown' in statuses else
+                      'unavailable' if 'unavailable' in statuses else 'verified')
+            return ip, status
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-            self.mapping = dict(pool.map(check,self.sources.items()))
+            self.mapping_status = dict(pool.map(check,self.sources.items()))
+        self.mapping = {ip: status == 'verified' for ip,status in self.mapping_status.items()}
         self.mapping_at = self.clock()
         # Failed verification is retried next cycle, not cached for five minutes.
         if not all(self.mapping.values()):
             self.mapping_at = 0
-        return all(self.mapping.values())
+        return (any(self.mapping.values()) and
+                not any(v in ('mismatch','unknown') for v in self.mapping_status.values()))
 
     def cycle(self):
         started = self.clock()
@@ -125,7 +142,8 @@ class Prober:
         # Each configured region has one vote; DNS errors invalidate the whole cycle.
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             controls = list(pool.map(lambda ip:tcp(None,ip,443),['1.1.1.1','8.8.8.8']))
-            jobs = [(ip,source,t,addr) for ip,source in self.sources.items() for t,addr in resolved]
+            jobs = [(ip,source,t,addr) for ip,source in self.sources.items()
+                    if self.mapping.get(ip, False) for t,addr in resolved]
             def probe(job):
                 ip,source,t,address = job
                 return ip,dict(name=t['name'],address=address,port=t['port'],**tcp(source,address,t['port']))
@@ -137,7 +155,8 @@ class Prober:
             ratio = len(latencies)/len(self.targets)
             samples[ip] = {'up':ratio>=HEALTHY_RATIO, 'port':PORT,
                 'latency_ms':statistics.median(latencies) if latencies else None,
-                'success_ratio':ratio, 'regions':regions}
+                'success_ratio':ratio, 'regions':regions,
+                'mapping_status':self.mapping_status.get(ip,'unknown')}
         return {'agent':MONITOR_ID,'observed_at':started,'direct_ok':mapping_ok,
                 'internet_ok':any(r['up'] for r in controls),'samples':samples}
 

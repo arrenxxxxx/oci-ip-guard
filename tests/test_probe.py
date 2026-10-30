@@ -49,9 +49,10 @@ class ProbeTest(unittest.TestCase):
             now[0]+=301;self.assertTrue(p.verify_mapping());self.assertEqual(echo.call_count,12)
         with patch.object(probe,'public_ip',side_effect=TimeoutError()) as echo:
             now[0]+=301;self.assertFalse(p.verify_mapping());self.assertFalse(p.verify_mapping())
-            self.assertEqual(echo.call_count,6)
+            self.assertEqual(echo.call_count,12)
     def test_fixed_denominator_and_source_bound_calls(self):
         p=probe.Prober()
+        p.mapping={ip:True for ip in IPS}
         hosts={t['host']:'1.1.1.'+str(i+1) for i,t in enumerate(p.targets)}
         def tcp(source,address,port):
             up=address!='1.1.1.2'
@@ -70,6 +71,39 @@ class ProbeTest(unittest.TestCase):
             sock=constructor.return_value.__enter__.return_value
             self.assertTrue(probe.tcp('10.0.0.10','1.1.1.1',443)['up'])
             sock.bind.assert_called_once_with(('10.0.0.10',0));sock.connect.assert_called_once_with(('1.1.1.1',443))
+
+    def test_detached_entry_does_not_disable_verified_backups(self):
+        p=probe.Prober()
+        reverse={v:k for k,v in p.sources.items()}
+        def echo(source, endpoint):
+            if source==p.sources[IPS[0]]: raise TimeoutError()
+            return reverse[source]
+        with patch.object(probe,'public_ip',side_effect=echo), \
+             patch.object(probe,'resolve',return_value='1.1.1.1'), \
+             patch.object(probe,'tcp',return_value={'up':True,'latency_ms':5}):
+            report=p.cycle()
+        self.assertTrue(report['direct_ok'])
+        self.assertEqual(report['samples'][IPS[0]]['success_ratio'],0)
+        self.assertEqual(report['samples'][IPS[0]]['mapping_status'],'unavailable')
+        self.assertTrue(report['samples'][IPS[1]]['up'])
+        self.assertTrue(report['samples'][IPS[2]]['up'])
+
+    def test_permission_error_still_inhibits_all_switching(self):
+        p=probe.Prober(); reverse={v:k for k,v in p.sources.items()}
+        def echo(source, endpoint):
+            if source==p.sources[IPS[0]]: raise PermissionError(1,'denied')
+            return reverse[source]
+        with patch.object(probe,'public_ip',side_effect=echo):
+            self.assertFalse(p.verify_mapping())
+
+    def test_second_echo_mismatch_not_hidden_by_first_timeout(self):
+        p=probe.Prober()
+        def echo(source, endpoint):
+            if endpoint==probe.ECHOES[0]: raise TimeoutError()
+            return '1.2.3.4'
+        with patch.object(probe,'public_ip',side_effect=echo):
+            self.assertFalse(p.verify_mapping())
+        self.assertEqual(set(p.mapping_status.values()),{'mismatch'})
 
 
 class RegionalDecisions(unittest.TestCase):
