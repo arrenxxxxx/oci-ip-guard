@@ -1,27 +1,65 @@
 {
   "uid": "oci-ip-guard",
-  "title": "OCI IP Guard · 单机区域探测",
+  "title": "OCI · 入口与自动切换",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 7,
   "refresh": "30s",
   "timezone": "browser",
   "tags": [
     "oci-ip-guard"
   ],
   "time": {
-    "from": "now-30m",
+    "from": "now-6h",
     "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "description": "当前入口、五条线路健康与切换结果。满足故障条件后自动更新 DNS，写入后读回确认。",
+  "graphTooltip": 1,
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "控制器",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(oci_guard_current_ip{job=\"oci-ip-guard\"},instance)",
+        "query": {
+          "query": "label_values(oci_guard_current_ip{job=\"oci-ip-guard\"},instance)",
+          "refId": "instance"
+        },
+        "refresh": 1,
+        "hide": 2,
+        "multi": false,
+        "includeAll": false,
+        "sort": 1,
+        "current": {}
+      }
+    ]
   },
   "panels": [
     {
       "id": 16,
-      "title": "DNS 自动切换实际状态（以此为准）",
+      "title": "自动切换",
       "type": "stat",
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
-        "h": 5
+        "w": 7,
+        "h": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -30,30 +68,41 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "2 * oci_guard_auto_switch_available + oci_guard_mode_simulate",
-          "legendFormat": "{{instance}}",
-          "instant": true
+          "expr": "2 * oci_guard_auto_switch_available{job=\"oci-ip-guard\",instance=\"$instance\"} + oci_guard_mode_simulate{job=\"oci-ip-guard\",instance=\"$instance\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "noValue": "无当前数据",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A8B6CD"
+          },
           "unit": "short",
-          "noValue": "无当前数据，不能判断",
+          "decimals": 0,
           "mappings": [
             {
               "type": "value",
               "options": {
                 "0": {
-                  "text": "自动切换不可用",
-                  "color": "red"
+                  "text": "暂不可用",
+                  "color": "#F4777F"
                 },
                 "1": {
-                  "text": "模拟模式：故障时不会修改 DNS",
-                  "color": "orange"
+                  "text": "仅观察 · 不改 DNS",
+                  "color": "#F5B66C"
                 },
                 "2": {
-                  "text": "DNS 自动切换已启用",
-                  "color": "green"
+                  "text": "已就绪",
+                  "color": "#73BF69"
                 }
               }
             }
@@ -62,27 +111,35 @@
         "overrides": []
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto",
+        "textMode": "value",
+        "justifyMode": "left",
+        "orientation": "auto",
+        "wideLayout": true,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
+        },
+        "text": {
+          "titleSize": 12,
+          "valueSize": 29
         }
-      }
+      },
+      "description": "当前保护条件允许故障时尝试切换。真实结果以 API 响应和读回确认为准。"
     },
     {
-      "id": 17,
-      "title": "容器工作线程 / 心跳",
+      "id": 21,
+      "title": "当前入口",
       "type": "stat",
       "gridPos": {
-        "x": 0,
-        "y": 5,
-        "w": 8,
-        "h": 5
+        "x": 7,
+        "y": 0,
+        "w": 9,
+        "h": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -91,113 +148,58 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "oci_guard_worker_healthy",
-          "legendFormat": "{{instance}}",
-          "instant": true
+          "expr": "oci_guard_current_ip{job=\"oci-ip-guard\",instance=\"$instance\"} == 1",
+          "legendFormat": "{{ip}}",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8FB8F6"
+          },
           "unit": "short",
-          "noValue": "无当前数据，不能判断",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "未就绪",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "通过（不是切换成功）",
-                  "color": "green"
-                }
-              }
-            }
-          ]
+          "decimals": 0
         },
         "overrides": []
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto",
+        "textMode": "name",
+        "justifyMode": "left",
+        "orientation": "auto",
+        "wideLayout": true,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
-        }
-      }
-    },
-    {
-      "id": 18,
-      "title": "探测样本有效",
-      "type": "stat",
-      "gridPos": {
-        "x": 8,
-        "y": 5,
-        "w": 8,
-        "h": 5
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_sample_valid",
-          "legendFormat": "{{instance}}",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "无当前数据，不能判断",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "未就绪",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "通过（不是切换成功）",
-                  "color": "green"
-                }
-              }
-            }
-          ]
         },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+        "text": {
+          "titleSize": 12,
+          "valueSize": 29
         }
       }
     },
     {
-      "id": 19,
-      "title": "DNS 记录校验",
-      "description": "只校验目标 DNS 记录，不读取 Token 权限清单。实际写入结果以切换事件和读回为准。",
+      "id": 22,
+      "title": "健康入口",
       "type": "stat",
       "gridPos": {
         "x": 16,
-        "y": 5,
-        "w": 8,
-        "h": 5
+        "y": 0,
+        "w": 4,
+        "h": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -206,53 +208,743 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "oci_guard_dns_record_ready",
-          "legendFormat": "{{instance}}",
-          "instant": true
+          "expr": "sum(oci_guard_ip_up{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#73BF69"
+          },
           "unit": "short",
-          "noValue": "无当前数据，不能判断",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "未就绪",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "通过（不是切换成功）",
-                  "color": "green"
-                }
-              }
-            }
-          ]
+          "decimals": 0
         },
         "overrides": []
       },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto",
+        "textMode": "value",
+        "justifyMode": "left",
+        "orientation": "auto",
+        "wideLayout": true,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
+        },
+        "text": {
+          "titleSize": 12,
+          "valueSize": 29
         }
       }
     },
     {
-      "id": 20,
-      "title": "自动切换保护原因（详细解释见 status）",
+      "id": 2,
+      "title": "距上次检测",
       "type": "stat",
       "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(time() - oci_guard_monitor_heartbeat_timestamp_seconds{job=\"oci-ip-guard\",instance=\"$instance\"}) and on(instance,job) (oci_guard_monitor_heartbeat_timestamp_seconds{job=\"oci-ip-guard\",instance=\"$instance\"} > 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "suffix: 秒",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#A8B6CD",
+                "value": null
+              },
+              {
+                "color": "#F5B66C",
+                "value": 90
+              },
+              {
+                "color": "#F4777F",
+                "value": 150
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "left",
+        "orientation": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "titleSize": 12,
+          "valueSize": 29
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "入口线路",
+      "type": "table",
+      "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 3,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_current_ip{job=\"oci-ip-guard\",instance=\"$instance\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "oci_guard_ip_up{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "oci_guard_regional_success_ratio{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "1000 * oci_guard_tcp_latency_seconds{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "E",
+          "expr": "oci_guard_consecutive_failures{job=\"oci-ip-guard\",instance=\"$instance\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false,
+            "minWidth": 70
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "入口 IP"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 175
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "当前"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "备用",
+                        "color": "#8C9BB1"
+                      },
+                      "1": {
+                        "text": "使用中",
+                        "color": "#8FB8F6"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "状态"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "异常",
+                        "color": "#F4777F"
+                      },
+                      "1": {
+                        "text": "健康",
+                        "color": "#73BF69"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "成功率"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#F4777F",
+                      "value": null
+                    },
+                    {
+                      "color": "#F5B66C",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "#73BF69",
+                      "value": 0.8
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "延迟"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: 毫秒"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "连续失败"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "当前",
+            "desc": true
+          }
+        ]
+      },
+      "description": "成功率为北京、杭州、深圳三个目标的连通比例。延迟为 TCP 建连中位数；不代表入站服务的端到端延迟。",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "ip",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "includeByName": {
+              "ip": true,
+              "Value #A": true,
+              "Value #B": true,
+              "Value #C": true,
+              "Value #D": true,
+              "Value #E": true
+            },
+            "indexByName": {
+              "ip": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5
+            },
+            "renameByName": {
+              "ip": "入口 IP",
+              "Value #A": "当前",
+              "Value #B": "状态",
+              "Value #C": "成功率",
+              "Value #D": "延迟",
+              "Value #E": "连续失败"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "最近 24 小时 · 切换结果",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(oci_guard_events_total{job=\"oci-ip-guard\",instance=\"$instance\",kind=\"dns_switch\"}[24h])",
+          "legendFormat": "切换成功",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "increase(oci_guard_events_total{job=\"oci-ip-guard\",instance=\"$instance\",kind=\"dns_write_failed\"}[24h])",
+          "legendFormat": "写入失败 / 待确认",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "increase(oci_guard_events_total{job=\"oci-ip-guard\",instance=\"$instance\",kind=\"switch_blocked\"}[24h])",
+          "legendFormat": "切换被阻止",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "切换成功"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#73BF69"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "写入失败 / 待确认"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F4777F"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "切换被阻止"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F5B66C"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "justifyMode": "left",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "text": {
+          "titleSize": 12,
+          "valueSize": 25
+        }
+      },
+      "description": "切换成功：已写入且读回确认。写入失败 / 待确认：查看当前记录与事件。切换被阻止：保护条件未满足。窗口内事件数由采样计数估算；历史模拟建议单列于诊断区。"
+    },
+    {
+      "id": 13,
+      "title": "国内连通率",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "oci_guard_regional_success_ratio{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+          "legendFormat": "{{ip}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [],
+          "showLegend": true
+        }
+      },
+      "description": "≥ 80% 视为健康；低于 50% 连续三轮判为故障。"
+    },
+    {
+      "id": 4,
+      "title": "线路延迟",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1000 * oci_guard_tcp_latency_seconds{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+          "legendFormat": "{{ip}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "suffix: ms",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [],
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "入口使用记录",
+      "type": "state-timeline",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
         "w": 24,
         "h": 6
       },
@@ -263,579 +955,533 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "oci_guard_auto_switch_blocked == 1",
-          "legendFormat": "{{instance}} · {{reason}}",
-          "instant": true
+          "expr": "oci_guard_current_ip{job=\"oci-ip-guard\",instance=\"$instance\"}",
+          "legendFormat": "{{ip}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "noValue": "无阻止原因或无数据，请同时核对上方状态",
+          "noValue": "暂无数据",
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [
             {
               "type": "value",
               "options": {
+                "0": {
+                  "text": "备用",
+                  "color": "#252E3E"
+                },
                 "1": {
-                  "text": "阻止切换",
-                  "color": "red"
+                  "text": "使用中",
+                  "color": "#73A5F8"
                 }
               }
             }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
           ],
-          "fields": "",
-          "values": false
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 90,
+            "spanNulls": false,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.65,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
         }
       }
     },
     {
-      "id": 1,
-      "title": "模拟观察标志（1=不会修改 DNS）",
-      "type": "stat",
+      "id": 30,
+      "type": "row",
+      "title": "诊断与规则",
+      "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 16,
-        "w": 12,
-        "h": 8
+        "y": 26,
+        "w": 24,
+        "h": 1
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
+      "panels": [
         {
-          "refId": "A",
-          "expr": "oci_guard_dry_run",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
+          "id": 17,
+          "title": "检查项",
+          "type": "stat",
+          "gridPos": {
+            "x": 0,
+            "y": 27,
+            "w": 12,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "oci_guard_worker_healthy{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "控制器",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "oci_guard_probe_worker_healthy{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "探测任务",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "采样有效",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "D",
+              "expr": "oci_guard_source_mapping_verified{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "IP 映射",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "E",
+              "expr": "oci_guard_internet_up{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "默认出口",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "F",
+              "expr": "oci_guard_dns_record_ready{job=\"oci-ip-guard\",instance=\"$instance\"}",
+              "legendFormat": "DNS 记录",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "暂无数据",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "异常",
+                      "color": "#F4777F"
+                    },
+                    "1": {
+                      "text": "正常",
+                      "color": "#73BF69"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "text": {
+              "valueSize": 20,
+              "titleSize": 12
+            }
+          }
         },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 2,
-      "title": "本地探测 最近心跳距今（秒）",
-      "type": "stat",
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
         {
-          "refId": "A",
-          "expr": "time() - oci_guard_monitor_heartbeat_timestamp_seconds",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
+          "id": 20,
+          "title": "切换保护",
+          "type": "stat",
+          "gridPos": {
+            "x": 12,
+            "y": 27,
+            "w": 12,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"configuration\"}",
+              "legendFormat": "运行配置",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"dns_read\"}",
+              "legendFormat": "DNS 读取",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"dns_record\"}",
+              "legendFormat": "DNS 记录",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "D",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"pending_write\"}",
+              "legendFormat": "写入待确认",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "E",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"sample_stale\"}",
+              "legendFormat": "采样过期",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "F",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"source_mapping\"}",
+              "legendFormat": "IP 映射",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "G",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"internet\"}",
+              "legendFormat": "默认出口",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "H",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"cooldown\"}",
+              "legendFormat": "切换冷却",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "I",
+              "expr": "oci_guard_auto_switch_blocked{job=\"oci-ip-guard\",instance=\"$instance\",reason=\"healthy_backup\"}",
+              "legendFormat": "健康备用",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "暂无数据",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "通过",
+                      "color": "#8C9BB1"
+                    },
+                    "1": {
+                      "text": "阻止",
+                      "color": "#F5B66C"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "text": {
+              "valueSize": 18,
+              "titleSize": 12
+            }
+          }
         },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 3,
-      "title": "入口区域健康状态（无效采样不展示）",
-      "type": "state-timeline",
-      "gridPos": {
-        "x": 0,
-        "y": 24,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
         {
-          "refId": "A",
-          "expr": "oci_guard_ip_up and on() (oci_guard_sample_valid == 1)",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
+          "id": 15,
+          "title": "各地区延迟",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 16,
+            "h": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "1000 * oci_guard_region_tcp_latency_seconds{job=\"oci-ip-guard\",instance=\"$instance\"} and on(instance,job) (oci_guard_sample_valid{job=\"oci-ip-guard\",instance=\"$instance\"} == 1)",
+              "legendFormat": "{{ip}} · {{region}}",
+              "instant": false,
+              "range": true,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "暂无数据",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "suffix: ms",
+              "decimals": 0,
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "stepAfter",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": false,
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisPlacement": "auto",
+                "gradientMode": "none",
+                "hideFrom": {
+                  "tooltip": false,
+                  "viz": false,
+                  "legend": false
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": [],
+              "showLegend": true
+            }
+          }
         },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 4,
-      "title": "TCP 建连延迟",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 24,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
         {
-          "refId": "A",
-          "expr": "oci_guard_tcp_latency_seconds and on() (oci_guard_sample_valid == 1)",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
+          "id": 24,
+          "title": "判定规则",
+          "type": "text",
+          "gridPos": {
+            "x": 16,
+            "y": 32,
+            "w": 8,
+            "h": 8
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "暂无数据",
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "**每 60 秒检测一次**\n\n北京、杭州、深圳，各目标一票。\n\n- 低于 50%，连续 3 轮：判为故障\n- 至少 80%，连续 3 轮：备用就绪\n- 切换后冷却 15 分钟\n- 恢复后不自动切回\n\n当前检测反映出站 TCP 连通性；DNS 缓存会影响客户端生效时间。"
+          }
         },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 5,
-      "title": "当前 DNS 入口 / 切换历史（1=当前入口）",
-      "type": "state-timeline",
-      "gridPos": {
-        "x": 0,
-        "y": 32,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
         {
-          "refId": "A",
-          "expr": "oci_guard_current_ip",
-          "legendFormat": "{{ip}}"
+          "id": 25,
+          "title": "历史模拟建议 · 24 小时",
+          "type": "stat",
+          "gridPos": {
+            "x": 0,
+            "y": 40,
+            "w": 8,
+            "h": 3
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "increase(oci_guard_events_total{job=\"oci-ip-guard\",instance=\"$instance\",kind=\"dry_run_switch\"}[24h])",
+              "legendFormat": "",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "暂无数据",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#8C9BB1"
+              },
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "left",
+            "orientation": "auto",
+            "wideLayout": true,
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "text": {
+              "titleSize": 12,
+              "valueSize": 29
+            }
+          },
+          "description": "这些记录只提出切换建议，没有修改 DNS。当前运行模式以页面顶部状态为准。"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 6,
-      "title": "24 小时有效采样可用率",
-      "type": "stat",
-      "gridPos": {
-        "x": 12,
-        "y": 32,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "increase(oci_guard_probe_success_total[24h]) / increase(oci_guard_probe_total[24h])",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 7,
-      "title": "连续失败次数",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 40,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_consecutive_failures",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 8,
-      "title": "累计故障次数（连续 3 次为一次事件）",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 40,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_failures_total",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 9,
-      "title": "实际 DNS 切换 / Dry Run 建议次数",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 48,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_events_total",
-          "legendFormat": "{{kind}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 10,
-      "title": "采样有效 / 源地址映射核验 / DNS 读取",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 48,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "{__name__=~\"oci_guard_(sample_valid|source_mapping_verified|dns_read_ok)\"}",
-          "legendFormat": "{{__name__}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 11,
-      "title": "双渠道配置（1=已配置）",
-      "type": "stat",
-      "gridPos": {
-        "x": 0,
-        "y": 56,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_notification_configured",
-          "legendFormat": "{{channel}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 12,
-      "title": "控制器待投递通知（Telegram 另见 Grafana）",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 56,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_notification_pending",
-          "legendFormat": "{{channel}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 13,
-      "title": "区域探测成功比例（<50% 故障，≥80% 健康）",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 64,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_regional_success_ratio and on() (oci_guard_sample_valid == 1)",
-          "legendFormat": "{{ip}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 14,
-      "title": "各地区 TCP 连通性",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 12,
-        "y": 64,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_region_up and on() (oci_guard_sample_valid == 1)",
-          "legendFormat": "{{ip}} / {{region}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 15,
-      "title": "各地区 TCP 建连延迟",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 72,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "oci_guard_region_tcp_latency_seconds and on() (oci_guard_sample_valid == 1)",
-          "legendFormat": "{{ip}} / {{region}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      ]
     }
-  ],
-  "annotations": {
-    "list": [
-      {
-        "name": "DNS / Dry Run events",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "enable": true,
-        "iconColor": "orange",
-        "expr": "changes(oci_guard_events_total[1m]) > 0",
-        "step": "15s",
-        "tagKeys": "kind",
-        "titleFormat": "{{kind}}"
-      }
-    ]
-  },
-  "timepicker": {
-    "refresh_intervals": [
-      "30s",
-      "1m",
-      "5m"
-    ]
-  },
-  "templating": {
-    "list": []
-  },
-  "description": "优先展示实际 DNS 自动切换可用性，区分模拟观察、保护阻止、控制器存活与探测有效。单机源地址区域 TCP 探测，不代表 VPN 入站验收。"
+  ]
 }

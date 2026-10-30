@@ -33,15 +33,16 @@ class MonitoringContractTest(unittest.TestCase):
         self.assertIn('oci_guard_mode_simulate', first['targets'][0]['expr'])
         self.assertTrue(first['targets'][0]['instant'])
         labels = first['fieldConfig']['defaults']['mappings'][0]['options']
-        self.assertEqual(labels['0']['text'], '自动切换不可用')
-        self.assertEqual(labels['1']['text'], '模拟模式：故障时不会修改 DNS')
-        self.assertEqual(labels['2']['text'], 'DNS 自动切换已启用')
+        self.assertEqual(labels['0']['text'], '暂不可用')
+        self.assertEqual(labels['1']['text'], '仅观察 · 不改 DNS')
+        self.assertEqual(labels['2']['text'], '已就绪')
         self.assertIn('无当前数据', first['fieldConfig']['defaults']['noValue'])
-        expressions = ' '.join(t['expr'] for p in panels for t in p['targets'])
+        all_panels = panels + [child for p in panels for child in p.get('panels', [])]
+        expressions = ' '.join(t['expr'] for p in all_panels for t in p.get('targets', []))
         for metric in ('oci_guard_worker_healthy', 'oci_guard_sample_valid',
                        'oci_guard_dns_record_ready', 'oci_guard_auto_switch_blocked'):
             self.assertIn(metric, expressions)
-        self.assertEqual(len({p['id'] for p in panels}), len(panels))
+        self.assertEqual(len({p['id'] for p in all_panels}), len(all_panels))
 
     def test_alerts_distinguish_simulation_success_and_failure(self):
         alerts = (ROOT / 'monitoring/alerts.yaml').read_text()
